@@ -1,0 +1,281 @@
+
+\documentclass{article}
+
+% Formatting
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage[titletoc,title]{appendix}
+
+\usepackage{comment}
+
+% Math
+% https://www.overleaf.com/learn/latex/Mathematical_expressions
+% https://en.wikibooks.org/wiki/LaTeX/Mathematics
+\usepackage{amsmath,amsfonts,amssymb,mathtools, bbold, bbm}
+
+% Images
+% https://www.overleaf.com/learn/latex/Inserting_Images
+% https://en.wikibooks.org/wiki/LaTeX/Floats,_Figures_and_Captions
+\usepackage{graphicx,float}
+
+% References
+% https://www.overleaf.com/learn/latex/Bibliography_management_in_LaTeX
+% https://en.wikibooks.org/wiki/LaTeX/Bibliography_Management
+\usepackage{biblatex}
+\addbibresource{report/references.bib}
+
+\usepackage{amsthm} % proof
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+
+% Title content
+\title{
+    {\huge \textbf{The Sylvester Equation}}\\
+    Computational Linear Algebra Miniproject
+}
+\author{Matthias Zeller}
+\date{\today}
+
+% Make mathbb nice https://tex.stackexchange.com/questions/58098/what-are-all-the-font-styles-i-can-use-in-math-mode
+\AtBeginDocument{
+  \DeclareSymbolFont{AMSb}{U}{msb}{m}{n}
+  \DeclareSymbolFontAlphabet{\mathbb}{AMSb}
+}
+
+% Double struck zero matrix  https://tex.stackexchange.com/a/399950/217578
+\DeclareMathAlphabet{\mymathbb}{U}{BOONDOX-ds}{m}{n}
+
+% Math custom commands
+\newcommand{\vect}[1]{\boldsymbol{\mathbf{#1}}}
+\newcommand{\R}{\mathbb R}
+\newcommand{\norm}[1]{\Vert #1 \Vert}
+\DeclareMathOperator{\trace}{Tr}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{\mathbb{V}ar}
+
+% Identity matrix: with or without size argument
+% https://tex.stackexchange.com/questions/409760/detect-no-argument-in-newcommand
+\makeatletter
+\def\Id{\@ifnextchar[\Id@command{\mathbb I}}
+\def\Id@command[#1]{\mathbb I_{#1}}
+\makeatother
+
+\begin{document}
+
+\maketitle
+
+\begin{itemize}
+    \item MVM = matrix vector mult
+\end{itemize}
+
+\section{Gaussian Process Background}
+
+Let $X = \begin{bmatrix} \vect x_1 & \dots & \vect x_n \end{bmatrix}^\top \in \R^{n \times D}$ collect the $n$ training observations with $d$-dimensional features, i.e. each data point $\vect x_i$ is a row of the matrix $X$. Let $\vect y \in \R^n$ collect the training targets with row-wise correspondence with respect to $X$. Gaussian Process Regression (GPR) involves fitting a *linear model* $f$ on the training data PROBABLY WRONG BECAUSE NON PARAMETRIC. 
+
+The whole power of GPs is the possibility to explicitly inject prior or domain knowledge into the inference process. 
+
+\subsection{Predictive Distribution}
+
+We are now interested in taking into account the observations at our disposal, i.e., compute a posterior probability distribution over functions conditioned on the training data. The call $\hat f \sim \mathcal{GP}(\hat \mu(\vect x), \hat k(\vect x, \vect x')$ the posterior - or predictive - Gaussian Process. Given a test sample $\vect x^\star$, one can consider the joints distribution of its prediction $y^\star = f(\vect x^\star)$ with the training targets,
+
+\begin{equation*}
+    \begin{bmatrix} y^\star \\ \vect y \end{bmatrix}
+    \sim \mathcal N \left( \vect 0, \begin{bmatrix}
+        k_{\vect x^\star} & \vect k_{\vect X \vect x^\star}^\top \\
+        \vect k_{X \vect x^\star} & \widehat K_{XX}
+    \end{bmatrix} \right) \; ,
+\end{equation*}
+
+and the conditional distribution $y^\star \mid X, \vect y \sim \mathcal N(\mu, \Sigma)$ is characterized by
+
+\begin{align*}
+    \mu &= \vect k_{\vect X \vect x^\star}^\top \widehat K_{XX}^{-1} \vect y \\
+    \Sigma &= k_{\vect x^\star} - \vect k_{X \vect x^\star}^\top \widehat K_{XX}^{-1} \vect k_{X \vect x^\star}
+\end{align*}
+
+\subsection{Marginal log-likelihood \& Hyperparameter Estimation}
+
+Since the marginal likelihood $p(\vect \theta \mid X, \vect y) \sim \mathcal N(\vect 0, K_{XX} + \sigma_\epsilon^2 \Id)$, one can estimate hyperparameters with maximum likelihood estimation 
+
+\begin{equation*}
+    L(\vect \theta \mid X, \vect y) := \log p(\vect \theta \mid X, \vect y) = - \vect y^\top \widehat K_{XX}^{-1} \vect y - \log \left| \widehat K_{XX} \right | - \frac n 2 \log(2\pi)
+\end{equation*}
+
+In order to perform gradient-based optimization, we need to compute the gradients of the marginal log-likelihood. We first compute the derivative of the inverse of a matrix using the chain rule,
+
+\begin{equation*}
+    \mymathbb 0 = \frac{d}{d \theta} \Id = \frac{d}{d \theta} \left( A^{-1}(\theta) A(\theta) \right) = \frac{d A^{-1}(\theta)}{d \theta} A(\theta) + A^{-1}(\theta) \frac{d A(\theta)}{d \theta}
+    \Rightarrow \frac{d A^{-1}(\theta) }{d \theta} = - A^{-1}(\theta) \frac{d A(\theta)}{d \theta} A^{-1}(\theta) \; .
+\end{equation*}
+
+The derivative of the determinant can be computed with the Jacobi's formula \textbf{TODO should I prove it? quite beautiful proof! recall NIDS lecture for polynomial invariants of deg > 3},
+
+\begin{equation*}
+    \frac{d}{d \theta} \det A(\theta) = \det A(\theta) \cdot \trace \left( A^{-1}(\theta) \frac{d A(\theta)}{d \theta} \right) \; .
+\end{equation*}
+
+So that the derivative of the marginal log-likelihood reads
+
+\begin{equation*}
+    \frac{d L}{d \theta} (\theta \mid X, \vect y) = \vect y^\top \widehat K_{XX}^{-1} \frac{d \widehat K_{XX}}{d\theta} \widehat K_{XX}^{-1} \vect y + \trace \left( \widehat K_{XX}^{-1} \frac{d \widehat K_{XX}}{d\theta} \right) \; ,
+\end{equation*}
+
+where the derivative of the kernel matrix $\frac{d \widehat K_{XX}}{d\theta}$ will depend on the user-specified kernel. 
+
+\section{Stochastic Trace Estimation}
+
+In this section we review the basics of how to efficiently compute an approximation of the trace of a matrix $A \in \R$ using only an MVM oracle $\vect x \mapsto A\vect x$. Of course, one can naively compute the exact quantity by using $n$ calls to the oracle to compute quadratic forms with canonical basis elements:
+
+\begin{equation*}
+    \sum_{i=1}^n \vect e_i^\top A \vect e_i = \sum_{i=1}^n a_{ii} =: \trace(A) \; ,
+\end{equation*}
+
+and this requires $\Theta(n^3)$ time. As this becomes quickly computationally prohibitive, we will trade exactness for speed by using stochastic estimator of $\trace(A)$ in $o(n^3)$ time.
+
+
+Analogously, another approach would be to compute the Cholesky decomposition $A = LL^\top$ in $\mathcal O(n^3)$ time, then the log determinant is easy to compute CHECK IF CAN BE DONE WITH MVM oracle only:
+\begin{equation*}
+    \log \det A = \trace \log(LL^\top) = 2 \trace \log(L) = 2 \sum_i \log l_{ii}
+\end{equation*}
+
+In particular, a simple estimator is $\vect z^\top A \vect z$, such that the first and second order statistics of $\vect z$ are $\E[\vect z] = \vect 0, \, \Var[\vect z] = \Id$. Indeed, the estimator is unbiased,
+
+\begin{equation*}
+    \E[\vect z^\top A \vect z] = \sum_{i,j=1}^n a_{ij} \E[z_i z_j] = \sum_{i,j=1}^n a_{ij} \delta_{ij} = \sum_{i=1}^n a_{ii} = \trace(A) \; .
+\end{equation*}
+
+One can then use a \emph{Monte Carlo} estimator $\hat \mu_\text{MC} := \frac 1 N \sum_{i=1}^N \vect z_i^\top A \vect z_i$, that is, average the result of several independent and identically distributed random draws of $\vect z_1, \ldots, \vect z_N$. The convergence is measured in terms of the variance of the estimator $\Var[\hat \mu_\text{MC} ] = \Var[\vect z^\top A \vect z] / N$, which depends on the matrix $A$ at hand and the distribution of $\vect z$.
+
+\begin{lemma}
+Let $A \in \R^{n \times n}$ be symmetric, $\vect X \sim \mathcal N(\vect 0, \Id[n])$, then the trace estimator $\vect X^\top A \vect X$ is has variance $2 \Vert A \Vert_\text{F}^2$.
+\end{lemma}
+\begin{proof}
+Let $A = Q \Lambda Q^\top$ be the spectral decomposition of $A$, denote $\vect q_i$ the columns of $Q$. The quadratic form can be written as 
+\begin{equation*}
+    \vect X^\top A \vect X = \sum_i \lambda_i (\vect X^\top \vect q_i)^2 = \sum_i \lambda_i Y_i^2, \quad Y_i := \vect X^\top \vect q_i \; ,
+\end{equation*}
+where $\vect Y = (Y_1, \ldots, Y_n) \sim \mathcal N(\vect 0, \Id)$. Recalling the 4th moment of the standard normal distribution is $\E[X^4] = 3$, and since the estimator is unbiased,
+\begin{align*}
+    \Var[\vect X^\top A \vect X] &= \E[(\vect X^\top A \vect X - \trace(A))^2] = \E[(\sum_i \lambda_i (Y_i^2 - 1))^2] \\
+    &= \sum_{ij} \lambda_i \lambda_j \E[(Y_i^2-1)(Y_j^2-1)] \\
+    &= \sum_i ( \lambda_i^2 \E[Y_i^4] + \lambda _i \sum_{j\neq i} \lambda_j ( 1 - \E[Y_i] - \E[Y_j] ) )\\
+    &=  \sum_i \lambda_i( 3 \lambda_i - \sum_{j\neq i} \lambda _j ) \\
+    &= 
+\end{align*}
+\end{proof}
+
+\begin{remark}
+This means we can apply the Central Limit theorem in order to get asymptotic bounds for the error of the estimator with $N \to \infty$ probe vectors.
+\end{remark}
+
+\section{Log-determinant Estimation}
+
+Assume first that we have the decomposition $\widehat K_{XX} = Q T Q^\top$, with $Q$ orthogonal and $T$ tri-diagonal. We can re-express the log-determinant in some more convenient form,
+
+\begin{equation*}
+    \log \left | \widehat K_{XX} \right | = \log \prod_{i=1}^n \lambda_i(\widehat K_{XX}) = \sum_{i=1}^n \log \lambda_i(\widehat K_{XX}) = \trace( \log \widehat K_{XX} ) = \trace(Q \log(T) Q^\top ) = \trace (\log T) \; .
+\end{equation*}
+
+We could obtain the tri-diagonal decomposition using e.g. Lanczos tridigonalization algorithm. However, \textbf{blabla numerical instabilities?}, and we want to re-use the computations performed for the other quantities. blablabla
+
+Mention analycity of $f=log$ for SPD matrix in $[\lambda_{\min}, \lambda_{\max}]$.
+
+
+\section{Lanczos for Approximations of Quadratic Forms}
+
+
+The quadratic forms $\vect x^\top f(A) \vect x$ arising from the stochastic trace approximation are expensive to compute and thus need to be approximated. We will explore the Lanczos quadrature. The first step is to express the quadratic form as a Riemann-Stieljes integral with respect to an unknown measure $\alpha$. For $f$ being analytic in $[\lambda_{\min}, \lambda_{\max}]$, we have,
+
+\begin{equation*}
+    \vect x^\top f(A) \vect x = \vect x^\top Q f(\Lambda) Q^\top \vect x = \sum_i f(\lambda_i) (Q^\top \vect x)_i^2 = \int_{\lambda_{\min}}^{\lambda_{\max}} f(\lambda) d \alpha(\lambda)
+\end{equation*}
+
+where the measure $\alpha(\lambda) = \sum_i w_i^2 I_{\lambda_i \le \lambda < \lambda_{i+1}}$, $w_i := (Q^\top \vect x)_i$, i.e. it is piecewise constant with known jumps $w_i^2$ but unknown jump nodes $\lambda_i$. The idea is now to approximate the integral with a quadrature rule. If we pick the Gauss quadrature rule with $s$ points, then the method has order $2k$, i.e. it integrates exactly all polynomials of degree equal or less than $2k-1$. Let us denote $b_i$ the weights and $c_i$ the nodes of the quadrature rule. Remains to find the coefficients $(b_i, c_i)$. There is a nice connection between the Gauss quadrature and the Lanczos algorithm, as stated in the following theorm.
+
+
+\begin{theorem}
+thm 6.2 of Golub, Consider the Arnoldi decomposition of a SPD matrix $A$ after $k$ steps of Lanczos,
+\begin{equation*}
+    A U_k = U_k T_k + \beta_k \vect u_{k+1} \vect e_k^\top, \quad T_k = \begin{bmatrix}
+        \alpha_1 & \beta_1  &               &               & \\
+        \beta_1  & \alpha_2 & \beta_2       &               & \\
+                 & \ddots   & \ddots        & \ddots        & \\
+                 &          & \beta_{k-2}   & \alpha_{k-1}  & \beta_{k-1} \\
+                 &          &               & \beta_{k-1}   & \alpha_k
+    \end{bmatrix}
+\end{equation*}
+
+where $U_k = \begin{bmatrix} \vect u_1 & \dots & \vect u_k \end{bmatrix} \in\R^{n\times k}$ is an orthonormal basis of the Krylov subspace $\text{span}\{\vect u_1, A \vect u_1, \ldots, A^{k-1} \vect u_1\}$ and $\vect u_1$ the starting vector. Let $(\mu_i, \vect v_i)$ be the Ritz pairs of $A$, i.e. the eigenpairs of $T_k$, such that $\Vert \vect v_i \Vert_2 = 1$. Then the $k$-point Gauss quadrature is given by the nodes $c_i = \mu_i$ and the weights $b_i = (\vect e_1^\top \vect v_i)^2$.
+\end{theorem}
+\begin{proof}
+Consider the Arnoldi decomposition after $k$ steps of Lanczos:
+
+\end{proof}
+
+This means that we can rewrite the approximation of the quadratic form as \textbf{INTERLACING PROPERTY SO THAT F IS ANALYTIC IN SPECTRAL INTERVAL OF $T_k$}
+\begin{equation*}
+    I_k = \sum_{i=1}^m b_i f(c_i) = \sum_{i=1}^m f(\mu_i) (\vect e_1^\top \vect v_i)^2 = \vect e_1^\top \sum_{i=1}^m f(\mu_i) \vect v_i \vect v_i^\top \vect e_1 = \vect e_1^\top V f(M) V^\top \vect e_1 = \vect e_1^\top f(T_k) \vect e_1
+\end{equation*}
+
+
+\section{Lanczos from CG}
+
+Ref: Sparse lniear systems book
+
+
+Let us show how one can recover the $T_m$ matrix obtained after $m$ steps of Lanczos by reusing computations done in CG. 
+
+Explain why orthog matrix obtained in Lanczos not needed at all since rotating the gaussian vectors still give gaussian indep things.
+
+Suppose we run $m$ steps of the PCG algorithm CITE ALGO for a PSD $A \in \R^{n\times n}$. With the notation of ALGO LANCZOS, after $m$ steps we have the decomposition
+
+\begin{equation} \label{eq:arnoldi_decomp_lanczos}
+    A V_m = V_m T_m + \delta_{m+1} \vect v_{m+1} \vect e_{m+1}^\top, \quad T_m := \text{tridiag}(\eta_{i-1}, \delta_i, \eta_i) \; ,
+\end{equation}
+
+with the columns of $V_m$ collecting the orthogonal basis vectors of the Krylov subspace $K_m(A, \vect r_0)$. Recall that from Lanczos, one can approximate the solution of a linear system $A\vect x = \vect b$ by extracting the solution $\vect x_m = \vect x_0 + V_m \vect y_m$, i.e. $\vect x_m \in \vect x_0 + \mathcal K_m(A, \vect r_0)$ with initial the residuals $\vect r_0 := \vect b - A \vect x_0$. One finds the vector $\vect y_m$ by imposing the Galerkin condition 
+
+\begin{equation}
+    \vect r_m := \vect b - A \vect x_m \perp \mathcal K_m(A, \vect r_0) \; .
+\end{equation}
+
+This can be equivalently reformulated in terms of the orthogonality with the basis elements $\vect v_k$, and recalling that $V_m \vect r_0 = \Vert \vect r_0 \Vert_2 \vect e_1$,
+
+\begin{equation*}
+    \vect 0 = V_m^\top \vect r_m = V_m^\top (\vect b - A \vect x_0 - A V_m \vect y_k) = V_m^\top \vect r_0 - V_m^\top A V_m \vect y_k 
+    \iff \vect y_m = T_m^{-1} \vect e_1 \norm{\vect r_0}_2 \; .
+\end{equation*}
+
+Note that this requires solving a linear system of size $m \ll n$, so that this is computationally favorable compared to the original system. A nice expression can be derived for the residuals, showing that they are orthogonal to each other:
+
+\begin{align}
+    \vect r_k &:= \vect b - A \vect x_k = \vect r_0 - A V_m \vect y_m\\
+    &\stackrel{\eqref{eq:arnoldi_decomp_lanczos}}{=} \dots = (\delta_{k+1} \vect e_k^\top \vect y_k) \vect v_{k+1} \label{eq:lanczos_residuals_basis_vec}
+\end{align}
+
+We can now derive the coefficients $\delta_k, \eta_k$ of the Lanczos algorithm from PCG. Starting with $\delta_{k} = \norm{\vect v_k}_A^2$, we wish to recover terms involving the residuals and conjugate directions. Using the above relation \eqref{eq:lanczos_residuals_basis_vec} is a good starting point, but we don't know the proportionality constant. The trick is to notice that the basis vectors are normalized, so that we can simply divide $\delta_k$ by $\norm{\vect v_k}_2$ to cancel the unkonwn constant:
+
+\begin{equation*}
+    \delta_{k+1} := \norm{\vect v_{k+1}}_A^2 = \frac{\norm{\vect v_{k+1}}_A^2}{\norm{\vect v_{k+1}}_2} = \frac{\norm{\vect r_{k}}_A^2}{\norm{\vect r_k}_2} \; .
+\end{equation*}
+
+The denominator is readily available from the CG algorithm. We must massage a bit the numerator by exploiting the definition of the search direction from the CG algorithm $\vect p_{k+1} = \vect r_{k+1} + \beta_k \vect p_k$ (with shifted indices), and recalling that those search directions are $A$-orthogonal,
+
+\begin{equation*}
+    \norm{\vect r_{k}}_A^2 = \vect p_k^\top A \vect p_k - 2 \beta_{k-1} \vect p_k^\top A \vect p_{k-1} + \beta_{k-1}^2 \vect p_{k-1}^\top A \vect p_{k-1} = \norm{\vect p_{k}}_A^2 + \beta_{k-1}^2 \norm{\vect p_{k-1}}_A^2 \; ,
+\end{equation*}
+
+where we define $\beta_{-1}:= 0, \, \vect p_{-1} := \vect0$ and later $\vect r_{-1} := \vect 0$, as we shifted the indices. This can now be expressed in terms of the $\alpha_k, \beta_k$ coefficients, 
+
+\begin{equation*}
+    \delta_{k+1} = \frac{\norm{\vect r_{k}}_A^2}{\norm{\vect r_k}_2} = \frac{\norm{\vect p_{k}}_A^2}{\norm{\vect r_k}_2} + \beta_{k-1}^2 \frac{\norm{\vect r_{k-1}}_A^2}{\norm{\vect r_k}_2} = \begin{cases}
+    \frac {1}{\alpha_k} + \frac{\beta_{k-1}}{\alpha_{k-1}} & \text{ if } k > 0\\
+    \frac {1}{\alpha_k} & \text{ if } k = 0
+    \end{cases}
+\end{equation*}
+
+
+
+
+\end{document}
