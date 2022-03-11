@@ -1,12 +1,13 @@
 """
 Conjugate Gradient Method.
 """
+
 from typing import Callable
 
-import numpy as np
+from src.utils import Array
 
 
-def cg_vanilla(Afun: Callable, b: np.ndarray, x0: np.ndarray, k: int, callback: Callable = None):
+def cg_vanilla(Afun: Callable, b: Array, x0: Array, k: int, callback: Callable = None):
     """
     Vanilla Conjugate Gradient.
 
@@ -25,7 +26,7 @@ def cg_vanilla(Afun: Callable, b: np.ndarray, x0: np.ndarray, k: int, callback: 
     # Initialize loop
     xprev = x0
     # Precompute squared norm of residuals
-    rnorm2 = np.empty(k + 1)
+    rnorm2 = [-1] * (k+1)
     rnorm2[0] = r.dot(r)
     for i in range(1, k+1):
         # Precompute matrix-vector product A x d
@@ -47,12 +48,10 @@ def cg_vanilla(Afun: Callable, b: np.ndarray, x0: np.ndarray, k: int, callback: 
         if callback is not None:
             callback(x)
 
-    # Compute norm of residuals (compute square root)
-    rnorm = np.sqrt(rnorm2)
-    return x, rnorm
+    return x
 
 
-def pcg_vanilla(Afun: Callable, Pinv: Callable, b: np.ndarray, x0: np.ndarray, k: int, callback: Callable = None):
+def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, callback: Callable = None):
     # Residuals of starting point
     r = b - Afun(x0)
     # Preconditioned residuals
@@ -61,9 +60,6 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: np.ndarray, x0: np.ndarray, k
     d = z
     # Initialize loop
     xprev = x0
-    # Precompute squared norm of residuals
-    rnorm2 = np.empty(k + 1)
-    rnorm2[0] = r.dot(r)
     # Precompute residual dot product with preconditioned residuals
     rTz_prev = r.dot(z)
     for i in range(1, k+1):
@@ -75,7 +71,6 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: np.ndarray, x0: np.ndarray, k
         x = xprev + alpha * d
         # Update the residuals of the new approximation
         r = r - alpha * Ad
-        rnorm2[i] = r.dot(r)
         z = Pinv(r)
         rTz = r.dot(z)
         # Conjugate Gram Schmidt: coefficient multiplying last search direction such that when it is added to the new
@@ -89,6 +84,4 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: np.ndarray, x0: np.ndarray, k
         if callback is not None:
             callback(x)
 
-    # Compute norm of residuals (compute square root)
-    rnorm = np.sqrt(rnorm2)
-    return x, rnorm
+    return x
