@@ -1,15 +1,40 @@
 
 
-from typing import Callable, Union
-
 import logging
+from time import time
+from typing import Callable, Union, Iterable
 
 import numpy as np
 import torch
-from time import time
-
 
 Array = Union[np.ndarray, torch.Tensor]
+
+
+def build_array_like(input_data: Iterable, reference_array: Array) -> Array:
+    if isinstance(reference_array, np.ndarray):
+        return np.array(input_data)
+    elif isinstance(reference_array, torch.Tensor):
+        return torch.tensor(input_data).to(reference_array.device)
+
+    raise ValueError
+
+
+def build_sym_tridiag_matrix(diag: Array, offdiag: Array):
+    if isinstance(diag, np.ndarray):
+        #M = sparse.diags((diag, offdiag, offdiag), (0, -1, 1))
+        n = len(diag)
+        indices = np.arange(n)
+        M = np.zeros((n, n))
+        M[(indices, indices)] = diag
+        M[(indices[:-1], indices[1:])] = offdiag
+        M[(indices[1:], indices[:-1])] = offdiag
+    elif isinstance(diag, torch.Tensor):
+        # TODO: don't forget to do to device?
+        raise NotImplemented
+    else:
+        raise ValueError('unrecognized type')
+
+    return M
 
 
 def timeit_decorate(reps=10):
