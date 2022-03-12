@@ -1,5 +1,4 @@
 
-
 import logging
 from time import time
 from typing import Callable, Union, Iterable
@@ -20,17 +19,21 @@ def build_array_like(input_data: Iterable, reference_array: Array) -> Array:
 
 
 def build_sym_tridiag_matrix(diag: Array, offdiag: Array):
+    # TODO: handle sparse? will break lanczos
+    n = len(diag)
     if isinstance(diag, np.ndarray):
-        #M = sparse.diags((diag, offdiag, offdiag), (0, -1, 1))
-        n = len(diag)
+        # M = sparse.diags((diag, offdiag, offdiag), (0, -1, 1))
         indices = np.arange(n)
         M = np.zeros((n, n))
         M[(indices, indices)] = diag
         M[(indices[:-1], indices[1:])] = offdiag
         M[(indices[1:], indices[:-1])] = offdiag
     elif isinstance(diag, torch.Tensor):
-        # TODO: don't forget to do to device?
-        raise NotImplemented
+        indices = torch.arange(n)
+        M = torch.zeros((n, n))
+        M[(indices, indices)] = diag
+        M[(indices[:-1], indices[1:])] = offdiag
+        M[(indices[1:], indices[:-1])] = offdiag
     else:
         raise ValueError('unrecognized type')
 
@@ -99,6 +102,4 @@ def timer(fun_compute: Callable, reps: int, fun_post: Callable = None) -> Callab
 
     return wrapped
 
-
-
-#%%
+# %%
