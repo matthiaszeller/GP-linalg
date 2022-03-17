@@ -2,8 +2,7 @@
 
 from typing import Callable, Tuple
 
-import numpy as np
-from scipy.linalg import solve
+import torch
 
 from src import utils
 from src.utils import Array
@@ -42,11 +41,11 @@ def lanczos_linear_system(Afun: Callable, x0: Array, b: Array, m: int) -> Tuple[
         alphas.append(alpha)
         betas.append(beta)
 
-    V = np.array(V[:-1]).T
-    T = utils.build_sym_tridiag_matrix(np.array(alphas), np.array(betas[:-1]))
-    e1 = np.zeros(m)
+    V = torch.stack(V[:-1]).T
+    T = utils.build_sym_tridiag_matrix(torch.tensor(alphas), torch.tensor(betas[:-1]))
+    e1 = torch.zeros(m)
     e1[0] = 1.
-    ym = solve(T, r0norm * e1, assume_a='sym')
+    ym = torch.linalg.solve(T, r0norm * e1)
     xm = x0 + V @ ym
 
     return xm, V, T
@@ -54,18 +53,41 @@ def lanczos_linear_system(Afun: Callable, x0: Array, b: Array, m: int) -> Tuple[
 
 if __name__ == '__main__':
     from scipy.stats import ortho_group
+    torch.set_default_dtype(torch.double)
 
-    n = 100
-    eigs = np.arange(1, n+1) * 10
-    Q = ortho_group.rvs(n)
-    A = Q @ np.diag(eigs) @ Q.T
-    Ainv = Q @ np.diag(1/eigs) @ Q.T
-    b = np.random.randn(n)
+    n, m = 100, 30
+    Q = torch.from_numpy(ortho_group.rvs(n))
+    eigs = torch.linspace(1, 1000, n)
+    A = Q @ torch.diag(eigs) @ Q.T
+    Ainv = Q @ torch.diag(1/eigs) @ Q.T
+
+    b = torch.randn(n)
+    x0 = torch.zeros(n)
     xtrue = Ainv @ b
-    x0 = np.zeros(n)
-    m = 30
+
     xm, V, T = lanczos_linear_system(lambda x: A@x, x0, b, m)
-    relerr_x = np.linalg.norm(xtrue - xm) / np.linalg.norm(xtrue)
-    # How far is V from having orthonormal columns ?
-    error_V = np.abs(np.eye(m) - V.T @ V).max()
+    # Check solutions
+    relerr = torch.norm(xtrue - xm) / torch.norm(xtrue)
+    # Check orthonormality
+    errorV = torch.abs(torch.eye(m) - V.T @ V).max()
+
+    condA = eigs.max() / eigs.min()
+    # Check convergence of relative error (with A-norms)
+    upperbound = 2 * ( (condA**0.5 - 1) / (condA**0.5 + 1) )**m
+    diff = xtrue - xm
+    relerr_A = (diff.T @ A @ diff)**0.5 / (xtrue.T @ A @ xtrue) ** 0.5
+
+    # n = 100
+    # eigs = np.arange(1, n+1) * 10
+    # Q = ortho_group.rvs(n)
+    # A = Q @ np.diag(eigs) @ Q.T
+    # Ainv = Q @ np.diag(1/eigs) @ Q.T
+    # b = np.random.randn(n)
+    # xtrue = Ainv @ b
+    # x0 = np.zeros(n)
+    # m = 30
+    # xm, V, T = lanczos_linear_system(lambda x: A@x, x0, b, m)
+    # relerr_x = np.linalg.norm(xtrue - xm) / np.linalg.norm(xtrue)
+    # # How far is V from having orthonormal columns ?
+    # error_V = np.abs(np.eye(m) - V.T @ V).max()
 
