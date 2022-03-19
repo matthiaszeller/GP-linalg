@@ -4,10 +4,11 @@ import unittest
 
 import numpy as np
 import torch
-torch.set_default_dtype(torch.float64)
 from scipy import stats
 
 from src.cg import cg_vanilla, pcg_vanilla, mbcg
+
+torch.set_default_dtype(torch.float64)
 
 
 class TestCG(unittest.TestCase):
@@ -33,14 +34,31 @@ class TestCG(unittest.TestCase):
         xk = pcg_vanilla(lambda x: self.A@x, lambda x: Pinv@x, b, np.zeros(self.n), 50)
         np.testing.assert_almost_equal(xk, self.Ainv@b, decimal=8)
 
-    def test_mbcg(self):
+    def test_mbcg_solution(self):
         t = 10
         B = np.random.randn(self.n, t)
         B /= (B * B).sum(0)
         Xk, _ = mbcg(lambda X: self.A@X, lambda X: X, B, np.zeros((self.n, t)), 50)
         np.testing.assert_almost_equal(Xk, self.Ainv@B)
 
-        # TODO test T returned by mbcg
+    def test_mbcg_2(self):
+        t = 10
+        B = np.random.randn(self.n, t)
+        B /= (B * B).sum(0)
+        Xk, _ = mbcg(lambda X: self.A @ X, lambda X: X, B, np.zeros((self.n, t)), 50)
+        for i in range(t):
+            xtrue = self.Ainv @ B[:, i]
+            xk = Xk[:, i]
+            np.testing.assert_allclose(xk, xtrue, rtol=1e-4)
+
+    def test_mbcg_T(self):
+        t = 10
+        B = np.random.randn(self.n, t)
+        B /= (B * B).sum(0)
+        _, Ts = mbcg(lambda X: self.A @ X, lambda X: X, B, np.zeros((self.n, t)), 50)
+        for T in Ts:
+            np.testing.assert_allclose(T, T.T, atol=0)
+            np.testing.assert_allclose(np.tril(T, -2), 0.0, atol=0)
 
     def test_torch(self):
         A = torch.from_numpy(self.A)
