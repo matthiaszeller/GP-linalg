@@ -1,5 +1,6 @@
 
 import logging
+from math import log, exp
 from time import time
 from typing import Callable, Union, Iterable
 
@@ -7,6 +8,34 @@ import numpy as np
 import torch
 
 Array = Union[np.ndarray, torch.Tensor]
+
+
+def compute_logdet_bounds(eigs: torch.Tensor, relerr: float, proba_error: float):
+    """
+    Compute the bounds on the number of probe vectors and number of Lanczos steps
+    :param eigs: eigenvalues of A (SPD)
+    :param relerr: relative error on the logdet
+    :param proba_error: upper bound on the probability of error
+    :return: Nmin, m_min
+    """
+    assert (eigs > 0).all()
+    # Condition number of A
+    condA = eigs.max() / eigs.min()
+
+    # Compute eigenvalues of log(A)
+    eigs = eigs.log()
+    # Compute the term with Frobenius norm, spectral norm and Trace of log(A)
+    frob_square = (eigs ** 2).sum()
+    spectral = eigs.abs().max()
+    abstrace = abs(eigs.sum())
+
+    N_min = (16 / relerr**2) * (frob_square + relerr * spectral) / (abstrace**2) * log(4 / proba_error)
+    n = eigs.shape[0] # matrix size
+
+    m_min = (condA + 1)**0.5 / 4 * log(4 / relerr / abstrace * n**2 * log(2*condA) * (1 + (condA + 1)**0.5))
+
+    N_min, m_min = N_min.item(), m_min.item()
+    return N_min, m_min
 
 
 def build_array_like(input_data: Iterable, reference_array: Array) -> Array:
@@ -30,7 +59,7 @@ def build_sym_tridiag_matrix(diag: Array, offdiag: Array):
         M[(indices[1:], indices[:-1])] = offdiag
     elif isinstance(diag, torch.Tensor):
         indices = torch.arange(n)
-        M = torch.zeros((n, n))
+        M = torch.zeros((n, n), dtype=diag.dtype, device=diag.device)
         M[(indices, indices)] = diag
         M[(indices[:-1], indices[1:])] = offdiag
         M[(indices[1:], indices[:-1])] = offdiag
