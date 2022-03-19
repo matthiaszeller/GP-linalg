@@ -1,30 +1,38 @@
+
+
 import torch
-from math import sqrt
-
-import numpy
-import numpy as np
 
 
-def find_pivot(S, i):
-    return np.argmax(np.diag(S)[i:]) + i
+def pivoted_chol(A: torch.Tensor, k: int) -> torch.Tensor:
+    """
+    Partial pivoted Cholesky factorization, see https://dl.acm.org/doi/10.1016/j.apnum.2011.10.001.
+    Returns the partial Cholesky factor Lk such that Lk@Lk.R ~= A.
+    Note that Lk is *not* lower triangular, but it is lower triangular up to some permutation of rows.
 
-
-def pivoted_chol(A: torch.Tensor, k: int):
+    :param A: nxn PSD matrix
+    :param k: rank of approximation, must be <= rank(A)
+    :return: Lk, nxk matrix
+    """
     # TODO if lazy tensors use get_diag and get_row instead
-    # https://www.sciencedirect.com/science/article/pii/S0168927411001814
+    # Initialize diagonal on which we'll search pivots
     d = torch.diag(A).clone()
     n = A.shape[0]
+    # Initialize permutation vector
     pi = torch.arange(n)
+    # Initialize partial Cholesky factor
     R = torch.zeros(k, n, dtype=A.dtype, device=A.device)
     for m in range(k):
+        # Find pivot among remaining (permuted) diagonal elements
         pivot = torch.argmax(d[pi[m:]]).item() + m
         pi[[m, pivot]] = pi[[pivot, m]]
 
+        # Check if negative definite
         if d[pi[m]] < 0:
             raise ValueError('the matrix is not PSD')
-        R[m, pi[m]] = d[pi[m]] ** 0.5
 
-        # TODO handle psd case L[m, pi[m]] is zero
+        # Cholesky factorization of Schur complement
+        R[m, pi[m]] = d[pi[m]] ** 0.5
+        # TODO handle: if A PSD *and* k > rank of A, then R[m, pi[m]] zero and division by zero
         row = A[pi[m], :]
         if m > 0:
             for i in range(m+1, n):
@@ -36,56 +44,10 @@ def pivoted_chol(A: torch.Tensor, k: int):
                 R[m, pi[i]] = row[pi[i]] / R[m, pi[m]]
                 d[pi[i]] -= R[m, pi[i]]**2
 
+    # Return "lower triangular" instead of "upper triangular"
     L = R.T
     return L
 
-
-# def pivoted_chol(A: np.ndarray, k: int):
-#     # After step i, the matrix S[:, :k] represents the i-step partial pivoted Cholesky decomposition of A
-#     #               the matrix S[k+1:, k+1:] represents the Schur complement
-#     S = A.copy()
-#     ls = []
-#     pi = np.arange(A.shape[0])
-#     for i in range(k):
-#         # Find permutation col/row
-#         p = find_pivot(S, i)
-#         # Permute 1st row and col with pth row and col
-#         S[[i, p], [i, p]] = S[[p, i], [p, i]]
-#         pi[[i, p]] = pi[[p, i]]
-#         # Cholesky decomposition of Schur complement S
-#         #l = S[:, 0] / sqrt(S[0, 0])
-#         S[i:, i] /= sqrt(S[i, i])
-#         # Compute new Schur complement (of smaller size)
-#         S[i+1:, i+1:] -= np.outer(S[i+1:, i], S[i+1:, i])
-#
-#     S = np.tril(S)
-#     return S
-#
-#     # Build the matrix L
-#     L = numpy.zeros(A.shape)
-#     # Accumulate permutations
-#     pi = np.arange(A.shape[0])
-#     for i in range(k):
-#         # Permutation performed at step i was only considering diagonal of Schur complement
-#         # thus must shift the permutation index
-#         # p_tilde = pivots[i] + i
-#         # # Update the accumulative permutation vector
-#         # print(pi)
-#         # pi[[i, p_tilde]] = pi[[p_tilde, i]]
-#         # print(pi)
-#         # Take into account the zeros when doing recursion
-#         l = ls[i]
-#         l[[0, pivots[i]]] = l[[pivots[i], 0]]
-#         pi[[i, pivots[i]]] = pi[[pivots[i], i]]
-#         ltilde = np.concatenate((np.zeros(i), l))
-#         # Apply accumulative permutation vector
-#         #ltilde = ltilde[pi]
-#         L += np.outer(ltilde, ltilde)
-#
-#     return L
-
-
-# %%
 
 if __name__ == '__main__':
     import tensorflow_probability as tfp
@@ -94,11 +56,11 @@ if __name__ == '__main__':
     torch.set_default_dtype(torch.double)
 
     # Full rank
-    # n, k = 5, 5
-    # A = torch.randn(n, n)
-    # A = A @ A.T
-    # L = pivoted_chol(A, k)
-    # err_numpy = (A-L@L.T).max()
+    n, k = 5, 5
+    A = torch.randn(n, n)
+    A = A @ A.T
+    L = pivoted_chol(A, k)
+    err_full = (A-L@L.T).max()
 
     # Partial compare with tensorflow implementation
     n, k = 10, 8
@@ -115,22 +77,4 @@ if __name__ == '__main__':
     condAhat = torch.linalg.cond(Ahat)
     precond_mx = torch.linalg.solve(Phat, Ahat)
     condPinvAhat = torch.linalg.cond(precond_mx)
-#     A = np.random.randn(n, n)
-#     A = A @ A.T
-#     L = pivoted_chol(A, k)
-#
-#     err = np.abs(A - L @ L.T).max()
-#
-#     # Partial
-#     n, k = 10, 5
-#     A = np.random.randn(n, n)
-#     A = A @ A.T
-#     L = pivoted_chol(A, k)
-#     condA = np.linalg.cond(A)
-#     P = L @ L.T
-#
-#     sigma = 1.0
-#     Ahat = A + np.eye(n) * sigma
-#     Phat = P + np.eye(n) * sigma
-#     condPinvA = np.linalg.cond(np.linalg.inv(Phat) @ Ahat) # TODO better test
-# # %%
+

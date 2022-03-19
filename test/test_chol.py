@@ -38,6 +38,7 @@ class TestCholesky(unittest.TestCase):
             torch.testing.assert_allclose(L, Ltf)
 
     def test_condition_number(self):
+        # TODO this isn't right ?
         n, k = 10, 3
         sigma2 = 1.0
         for _ in range(10):
