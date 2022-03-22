@@ -53,6 +53,15 @@ class TestPreconditionner(unittest.TestCase):
     eigs = 10**torch.linspace(0, 5, n)
     A = Q @ torch.diag(eigs) @ Q.T
 
+    def test_matmul(self):
+        k, sigma2 = 10, 2
+        P = PartialCholesky(self.A, k, sigma2)
+        Pkhat = P.Lk @ P.Lk.T + sigma2 * torch.eye(self.n)
+        X = torch.randn(self.n, 10)
+        mul = P @ X
+        true = Pkhat @ X
+        torch.testing.assert_allclose(mul, true, atol=0, rtol=1e-10)
+
     def test_invfun(self):
         k, sigma2 = 30, 2.
         P = PartialCholesky(self.A, k, sigma2)
@@ -68,10 +77,9 @@ class TestPreconditionner(unittest.TestCase):
         P = PartialCholesky(self.A, k, sigma2)
         Phat = P.Lk @ P.Lk.T + sigma2 * torch.eye(self.n)
 
-        N = 10
         Y = torch.randn(self.n, 10)
         X = P.inv_fun(Y)
-        Xtrue = torch.linalg.solve(Phat, X)
+        Xtrue = torch.linalg.solve(Phat, Y)
         torch.testing.assert_allclose(X, Xtrue)
 
     def test_logdet(self):
@@ -81,7 +89,7 @@ class TestPreconditionner(unittest.TestCase):
             Phat = P.Lk @ P.Lk.T + sigma2 * torch.eye(self.n)
             logdet = P.logdet()
             true = torch.logdet(Phat).item()
-            self.assertAlmostEquals(logdet, true, places=10)
+            self.assertAlmostEqual(logdet, true, places=10)
 
 
 if __name__ == '__main__':

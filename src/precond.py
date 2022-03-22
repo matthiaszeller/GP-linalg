@@ -25,11 +25,14 @@ class Preconditionner:
 
 class PartialCholesky(Preconditionner):
     def __init__(self, K: torch.Tensor, k: int, sigma2: float):
-        super(PartialCholesky, self).__init__(k, sigma2)
+        super().__init__(k, sigma2)
         # Compute partial pivoted Cholesky
         self.Lk = pivoted_chol(K, k)
         # Precompute useful term
         self.LTL = self.Lk.T @ self.Lk
+
+    def __matmul__(self, other):
+        return torch.linalg.multi_dot((self.Lk, self.Lk.T, other)) + self.sigma2 * other
 
     def inv_fun(self, y: torch.Tensor):
         M = torch.eye(self.k) + self.LTL / self.sigma2
