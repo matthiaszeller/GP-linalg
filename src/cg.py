@@ -2,7 +2,9 @@
 Conjugate Gradient Method.
 """
 
-from typing import Callable
+from typing import Callable, Tuple, List
+
+import torch
 
 from src import utils
 from src.lanczos import lanczos_linear_system
@@ -99,7 +101,13 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, cal
     return x
 
 
-def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int, callback: Callable = None):
+def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
+         callback: Callable = None) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    if B.ndim == 1:
+        B = B.reshape(-1, 1)
+    if X0.ndim == 1:
+        X0 = X0.reshape(-1, 1)
+
     # Residuals of starting point
     R = B - Afun(X0)
     # Preconditioned residuals
