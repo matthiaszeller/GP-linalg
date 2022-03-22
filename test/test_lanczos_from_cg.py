@@ -25,37 +25,23 @@ class TestLanczosFromCg(unittest.TestCase):
             x0 = x0.reshape(-1, 1)
             _, (T_mbcg, ) = mbcg(lambda X: A@X, lambda X: X, b, x0, m)
 
-            torch.testing.assert_allclose(T_mbcg, T_lanczos, atol=1e-10, rtol=1e-10)
+            torch.testing.assert_allclose(T_mbcg, T_lanczos, atol=1e-10, rtol=1e-8)
 
     def test_lanczos_from_cg_batched(self):
         n, m = 100, 30
         M = torch.randn(n, n)
         A = M @ M.T
+        B = torch.randn(n, 10)
+        X0 = torch.zeros(n, 10)
 
-        n_batch = 10
-        B = torch.randn(n, n_batch)
-        X0 = torch.randn(n, n_batch)
+        Ts_lanczos = [
+            lanczos_linear_system(lambda x: A@x, x0, b, m)[2]
+            for x0, b in zip(X0.T, B.T)
+        ]
+        _, Ts = mbcg(lambda X: A@X, lambda X: X, B, X0, m)
 
-        X, Ts_mbcg = mbcg(lambda X: A@X, lambda X: X, B, X0, m)
-        self.assertEqual(len(Ts_mbcg), n_batch)
-
-        for i, T_mbcg in enumerate(Ts_mbcg):
-            b, x0 = B[:, i], X0[:, i]
-            xm, _, T_lanczos = lanczos_linear_system(lambda x: A@b, x0, b, m)
-            torch.testing.assert_allclose(xm, X[:, i], rtol=1e-10, atol=1e-10)
-            torch.testing.assert_allclose(T_mbcg, T_lanczos, atol=1e-10, rtol=1e-10)
-
-
-        Ts_lanczos = []
-        for i in range(n_batch):
-            b, x0 = B[:, i], X0[:, i]
-            _, _, T = lanczos_linear_system(lambda x: A@b, x0, b, m)
-            Ts_lanczos.append(T)
-
-        torch.testing.assert_allclose(
-            torch.stack(Ts_mbcg),
-            torch.stack(Ts_lanczos), rtol=1e-10, atol=1e-10
-        )
+        for T_lanczos, T_mbcg in zip(Ts_lanczos, Ts):
+            torch.testing.assert_allclose(T_lanczos, T_mbcg)
 
 
 if __name__ == '__main__':
