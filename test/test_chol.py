@@ -38,8 +38,7 @@ class TestCholesky(unittest.TestCase):
             torch.testing.assert_allclose(L, Ltf)
 
     def test_condition_number(self):
-        # TODO this isn't right ?
-        n, k = 10, 3
+        n, k = 50, 30
         sigma2 = 1.0
         for _ in range(10):
             M = torch.randn(n, n)
@@ -49,8 +48,12 @@ class TestCholesky(unittest.TestCase):
             Ahat = A + torch.eye(n) * sigma2
             Phat = L @ L.T + torch.eye(n) * sigma2
             PinvA = torch.linalg.solve(Phat, Ahat)
+            eigs_PinvA = torch.linalg.eigvals(PinvA)
+            torch.testing.assert_allclose(torch.imag(eigs_PinvA), torch.zeros(n))
+            eigs_PinvA = torch.real(eigs_PinvA)
+
             condA = torch.linalg.cond(Ahat)
-            condPinvA = torch.linalg.cond(PinvA)
+            condPinvA = eigs_PinvA.max() / eigs_PinvA.min()
             self.assertGreater(condA, condPinvA)
 
 
