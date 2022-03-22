@@ -18,38 +18,51 @@ class TestCG(unittest.TestCase):
     A = Q @ np.diag(eigs) @ Q.T
     Ainv = Q @ np.diag(1 / eigs) @ Q.T
 
+    t = 10 # for batched operations
+
     def test_vanilla_cg(self):
         b = np.random.randn(self.n)
         b /= b.dot(b)**0.5
-        m = 50
+        m = 90
         xk = cg_vanilla(lambda x: self.A@x, b, np.zeros(self.n), m)
-        np.testing.assert_almost_equal(xk, self.Ainv@b, decimal=8)
+        np.testing.assert_allclose(xk, self.Ainv@b, rtol=1e-10, atol=1e-16)
 
     def test_vanilla_pcg(self):
         b = np.random.randn(self.n)
         b /= b.dot(b)**0.5
-        m = 30
+        m = 20
         eigs_pinv = np.concatenate((np.ones(self.n-m), 1/self.eigs[-m:]))
         Pinv = self.Q @ np.diag(eigs_pinv) @ self.Q.T
-        xk = pcg_vanilla(lambda x: self.A@x, lambda x: Pinv@x, b, np.zeros(self.n), 50)
-        np.testing.assert_almost_equal(xk, self.Ainv@b, decimal=8)
+        k = 75
+        xk = pcg_vanilla(lambda x: self.A@x, lambda x: Pinv@x, b, np.zeros(self.n), k)
+        np.testing.assert_allclose(xk, self.Ainv@b, rtol=1e-10, atol=1e-16)
 
     def test_mbcg_solution(self):
-        t = 10
-        B = np.random.randn(self.n, t)
+        B = np.random.randn(self.n, self.t)
         B /= (B * B).sum(0)
-        Xk, _ = mbcg(lambda X: self.A@X, lambda X: X, B, np.zeros((self.n, t)), 50)
-        np.testing.assert_almost_equal(Xk, self.Ainv@B)
+        k = 80
+        Xk, _ = mbcg(lambda X: self.A@X, lambda X: X, B, np.zeros((self.n, self.t)), k)
+        np.testing.assert_allclose(Xk, self.Ainv@B, rtol=1e-10, atol=1e-16)
 
     def test_mbcg_2(self):
-        t = 10
-        B = np.random.randn(self.n, t)
+        B = np.random.randn(self.n, self.t)
         B /= (B * B).sum(0)
-        Xk, _ = mbcg(lambda X: self.A @ X, lambda X: X, B, np.zeros((self.n, t)), 50)
-        for i in range(t):
+        k = 80
+        Xk, _ = mbcg(lambda X: self.A @ X, lambda X: X, B, np.zeros((self.n, self.t)), k)
+        for i in range(self.t):
             xtrue = self.Ainv @ B[:, i]
             xk = Xk[:, i]
-            np.testing.assert_allclose(xk, xtrue, rtol=1e-4)
+            np.testing.assert_allclose(xk, xtrue, rtol=1e-10, atol=1e-16)
+
+    def test_precond_mbcg_solution(self):
+        B = np.random.randn(self.n, self.t)
+        m = 50
+        eigs_pinv = np.concatenate((np.ones(self.n - m), 1 / self.eigs[-m:]))
+        Pinv = self.Q @ np.diag(eigs_pinv) @ self.Q.T
+
+        k = 50
+        Xk, _ = mbcg(lambda X: self.A@X, lambda X: Pinv @ X, B, np.zeros((self.n, self.t)), k)
+        np.testing.assert_allclose(Xk, self.Ainv @ B, rtol=1e-10, atol=1e-16)
 
     def test_mbcg_T(self):
         t = 10
