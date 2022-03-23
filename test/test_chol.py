@@ -3,6 +3,7 @@ import unittest
 import torch
 import tensorflow as tf
 import tensorflow_probability as tfp
+from scipy.stats import ortho_group
 
 from src.chol import pivoted_chol
 
@@ -36,6 +37,17 @@ class TestCholesky(unittest.TestCase):
             Ltf = tfp.math.pivoted_cholesky(tf.convert_to_tensor(A), k)
             Ltf = torch.from_numpy(Ltf.numpy())
             torch.testing.assert_allclose(L, Ltf)
+
+    def test_low_rank(self):
+        n, r = 20, 2
+        Q = torch.from_numpy(ortho_group.rvs(n))
+        eigs = torch.linspace(1, n, n)
+        eigs[r:] = 0
+        A = Q @ torch.diag(eigs) @ Q.T
+        L = pivoted_chol(A, n)
+        self.assertEqual(L.shape, (n, r))
+
+        torch.testing.assert_allclose(A, L @ L.T)
 
     def test_condition_number(self):
         n, k = 50, 30

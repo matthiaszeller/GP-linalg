@@ -91,6 +91,14 @@ class TestPreconditionner(unittest.TestCase):
             true = torch.logdet(Phat).item()
             self.assertAlmostEqual(logdet, true, places=10)
 
+    def test_sampling(self):
+        max_rank = 5
+        sigma2 = 2.0
+        P = PartialCholesky(self.A, max_rank, sigma2)
+        samples = P.sample_gaussian(size=10)
+        # TODO test convergence of empirical covariance to true covariance ?
+        # For now, just test that this runs without errors
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -8,6 +8,7 @@ from src.utils import Array
 
 
 class Preconditionner:
+    """Abstract base class for preconditionners."""
     def __init__(self, K: torch.Tensor, k: int, sigma2: float):
         """
         :param k: rank of preconditionner
@@ -18,17 +19,47 @@ class Preconditionner:
         self.sigma2 = sigma2
 
     def __matmul__(self, other):
+        """Matrix-matrix multiplication with preconditionner matrix."""
+        # Child classes must implement this
         raise NotImplementedError
 
     def inv_fun(self, y: Array):
+        """Matrix-matrix multiplication oracle y |-> P^-1 y, i.e. with the *inverse* of the preconditionner matrix."""
+        # Child classes must implement this
         raise NotImplementedError
+
+    def logdet(self):
+        """Exact computation of the log-determinant of the precondionner matrix."""
+        # Child classes must implement this
+        raise NotImplementedError
+
+    def sample_gaussian(self, size: int):
+        """Sample from the multivariate Gaussian distribution N(0, P) with P the preconditionner matrix."""
 
 
 class PartialCholesky(Preconditionner):
-    def __init__(self, K: torch.Tensor, k: int, sigma2: float):
-        super().__init__(K, k, sigma2)
+    def __init__(self, K: torch.Tensor, max_rank: int, sigma2: float, tol=1e-12):
+        """
+        Initialize partial pivoted Cholesky preconditionner of rank at most k.
+        If pivoted Cholesky converges before k steps, then the rank will be smaller.
+        Pivoted cholesky computes the approximation L L^T ~= K,
+        then the preconditionner is Pk_hat = L L^T + sigma2 I, I the identity.
+
+        Important note: Pk_hat will precondition K_hat = K + sigma2 I, and *not* just K alone.
+
+        :param K: input PSD matrix without added diagonal
+        :param max_rank: maximum rank of the preconditionner
+        :param sigma2: noise variance,
+        """
+        # Initialize parent object
+        super().__init__(K, max_rank, sigma2)
+
         # Compute partial pivoted Cholesky
-        self.Lk = pivoted_chol(K, k)
+        self.Lk = pivoted_chol(K, max_rank, tol)
+
+        # If pivoted Cholesky converged earlier than max_rank, need to update the rank
+        self.k = self.Lk.shape[-1]
+
         # Precompute useful term (small matrix: k x k)
         self.LTL = self.Lk.T @ self.Lk
 
@@ -36,24 +67,31 @@ class PartialCholesky(Preconditionner):
         return torch.linalg.multi_dot((self.Lk, self.Lk.T, other)) + self.sigma2 * other
 
     def Pk_hat(self):
+        """Construct explicitly the full preconditionner matrix Pk_hat = L L^T + sigma2 I"""
         return self.Lk @ self.Lk.T + self.sigma2 * torch.eye(self.n)
 
     def inv_fun(self, y: torch.Tensor):
+        """See docstrings of parent class"""
+        # Leverage Woodbury formula to solve a k x k system instead of n x n, k << n
         M = torch.eye(self.k) + self.LTL / self.sigma2
         z = torch.linalg.solve(M, self.Lk.T @ y)
         return y / self.sigma2 - self.Lk @ z / self.sigma2**2
 
     def logdet(self):
+        """See docstrings of parent class"""
+        # Leverage the lemma for matrix determinant (analogous to Woodbury)
+        # by computing eigenvalues of k x k matrix instead of n x n, k << n
         eigs = torch.linalg.eigvalsh(self.LTL)
         eigs = (1 + eigs / self.sigma2).log().sum()
-        n = self.Lk.shape[0]
-        logdet = n * log(self.sigma2) + eigs
+        logdet = self.n * log(self.sigma2) + eigs
         return float(logdet)
 
     def sample_gaussian(self, size: int):
-        n = self.Lk.shape[0]
+        """See docstrings of parent class"""
+        # Leverage re-parametrization trick: if covariance matrix has decomposition S = MM^T,
+        # then easy to sample from N(0, S)
         M1 = torch.randn((self.k, size), dtype=self.Lk.dtype, device=self.Lk.device)
-        M2 = torch.randn((n, size), dtype=self.Lk.dtype, device=self.Lk.device)
+        M2 = torch.randn((self.n, size), dtype=self.Lk.dtype, device=self.Lk.device)
         Y = self.Lk @ M1 + self.sigma2 ** 0.5 * M2
         return Y
 
