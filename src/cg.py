@@ -103,9 +103,12 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, cal
 
 def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
          callback: Callable = None) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-    if B.ndim == 1:
+    if B.ndim != X0.ndim:
+        raise ValueError('B and X0 do not have the same number of dimensions')
+
+    vector_input = (B.ndim == 1)
+    if vector_input:
         B = B.reshape(-1, 1)
-    if X0.ndim == 1:
         X0 = X0.reshape(-1, 1)
 
     # Residuals of starting point
@@ -163,6 +166,8 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
         offdiag = b[1:-1]**0.5 * ainv[1:-1]
         Ts.append(utils.build_sym_tridiag_matrix(diag, offdiag))
 
+    if vector_input:
+        X = X.reshape(-1)
     return X, Ts
 
 #%%
@@ -170,17 +175,33 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
 
 if __name__ == '__main__':
     import numpy as np
-    # Compare T matrix got by MBCG and Lanczos
+    from scipy.stats import ortho_group
+    torch.set_default_dtype(torch.double)
+
     n = 100
-    M = np.random.randn(n, n)
-    A = M @ M.T
-    b = np.random.randn(n)
-    m = 30
-    x0 = np.zeros(n)
-    _, _, T_lanczos = lanczos_linear_system(lambda x: A@x, x0, b, m)
+    Q = torch.from_numpy(ortho_group.rvs(n))
+    eigs = torch.linspace(1, 10, n)
+    A = Q @ torch.diag(eigs) @ Q.T
+    Ainv = Q @ torch.diag(1/eigs) @ Q.T
 
-    b = b.reshape(-1, 1)
-    x0 = x0.reshape(-1, 1)
-    _, T_mbcg = mbcg(lambda x: A@x, lambda x: x, b, x0, m)
+    b = torch.randn(n)
+    x0 = torch.zeros(n)
+    x = Ainv @ b
+    sanity_check = (x - torch.linalg.solve(A, b)).norm()
 
-    err_T = np.abs(T_lanczos - T_mbcg).max()
+    xk, _ = mbcg(lambda X: A@X, lambda X: X, b, x0, 10)
+
+    # # Compare T matrix got by MBCG and Lanczos
+    # n = 100
+    # M = np.random.randn(n, n)
+    # A = M @ M.T
+    # b = np.random.randn(n)
+    # m = 30
+    # x0 = np.zeros(n)
+    # _, _, T_lanczos = lanczos_linear_system(lambda x: A@x, x0, b, m)
+    #
+    # b = b.reshape(-1, 1)
+    # x0 = x0.reshape(-1, 1)
+    # _, T_mbcg = mbcg(lambda x: A@x, lambda x: x, b, x0, m)
+    #
+    # err_T = np.abs(T_lanczos - T_mbcg).max()

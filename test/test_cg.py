@@ -39,14 +39,22 @@ class TestCG(unittest.TestCase):
 
     def test_mbcg_solution(self):
         B = np.random.randn(self.n, self.t)
-        B /= (B * B).sum(0)
+        #B /= (B * B).sum(0)
         k = 80
         Xk, _ = mbcg(lambda X: self.A@X, lambda X: X, B, np.zeros((self.n, self.t)), k)
         np.testing.assert_allclose(Xk, self.Ainv@B, rtol=1e-10, atol=1e-16)
+        # Test full rank
+        Xk, _ = mbcg(lambda X: self.A@X, lambda X: X, B, np.zeros((self.n, self.t)), self.n)
+        np.testing.assert_allclose(Xk, self.Ainv@B, rtol=1e-10, atol=1e-16)
+
+        # Test with vectors (non-batched version)
+        b = np.random.randn(self.n)
+        xk, _ = mbcg(lambda X: self.A@X, lambda X: X, b, np.zeros(self.n), self.n)
+        np.testing.assert_allclose(xk, self.Ainv@b, rtol=1e-10, atol=1e-16)
 
     def test_mbcg_2(self):
         B = np.random.randn(self.n, self.t)
-        B /= (B * B).sum(0)
+        #B /= (B * B).sum(0)
         k = 80
         Xk, _ = mbcg(lambda X: self.A @ X, lambda X: X, B, np.zeros((self.n, self.t)), k)
         for i in range(self.t):
