@@ -7,7 +7,7 @@ import torch
 from src.cg import mbcg
 
 
-def lanczos_quadrature(f: Callable, Tm: torch.Tensor, z: torch.Tensor):
+def lanczos_quadrature(f: Callable, Tm: torch.Tensor, z: torch.Tensor, matrix_size: int):
     """
     Approximation of quadratic form z^T f(A) z with Lanczos quadrature, A symmetric matrix where the function
     f is analytic in the spectral interval of f(A).
@@ -16,6 +16,11 @@ def lanczos_quadrature(f: Callable, Tm: torch.Tensor, z: torch.Tensor):
     :param z: probe vector used to start Lanczos iteration
     :return: approximation norm(z)^2 * e1^T f(Tm) e1
     """
+    if z.ndim > 1:
+        raise ValueError
+    elif z.shape[0] != matrix_size:
+        raise ValueError
+
     # Spectral decomposition of Tm # TODO use specialized algorithm for tridiag matrices
     eigs, Q = torch.linalg.eigh(Tm)
     # Compute function of eigenvalues
@@ -26,7 +31,7 @@ def lanczos_quadrature(f: Callable, Tm: torch.Tensor, z: torch.Tensor):
     approx = (v1 * feigs).dot(v1).sum()
     # Scale by squared norm of z
     approx *= z.dot(z)
-    return approx
+    return approx.item()
 
 
 def slq(Afun: Callable, N: int, m: int):
