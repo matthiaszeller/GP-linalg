@@ -8,11 +8,12 @@ from src.utils import Array
 
 
 class Preconditionner:
-    def __init__(self, k: int, sigma2: float):
+    def __init__(self, K: torch.Tensor, k: int, sigma2: float):
         """
         :param k: rank of preconditionner
         :param sigma2: noise variance
         """
+        self.n = K.shape[0]
         self.k = k
         self.sigma2 = sigma2
 
@@ -25,14 +26,17 @@ class Preconditionner:
 
 class PartialCholesky(Preconditionner):
     def __init__(self, K: torch.Tensor, k: int, sigma2: float):
-        super().__init__(k, sigma2)
+        super().__init__(K, k, sigma2)
         # Compute partial pivoted Cholesky
         self.Lk = pivoted_chol(K, k)
-        # Precompute useful term
+        # Precompute useful term (small matrix: k x k)
         self.LTL = self.Lk.T @ self.Lk
 
     def __matmul__(self, other):
         return torch.linalg.multi_dot((self.Lk, self.Lk.T, other)) + self.sigma2 * other
+
+    def Pk_hat(self):
+        return self.Lk @ self.Lk.T + self.sigma2 * torch.eye(self.n)
 
     def inv_fun(self, y: torch.Tensor):
         M = torch.eye(self.k) + self.LTL / self.sigma2
