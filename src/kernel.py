@@ -2,6 +2,8 @@ from math import ceil
 
 import numpy as np
 import torch
+from scipy.special import gamma
+from scipy.special import kv as modified_bessel_2nd
 
 
 class Kernel:
@@ -89,6 +91,37 @@ class RBFKernel(RadialKernel):
     def _compute(self, X: torch.Tensor) -> torch.Tensor:
         D = self.get_distance_matrix(X)
         K = torch.exp(-D / self.charact_length)
+        return K
+
+
+class MaternKernel(RadialKernel):
+
+    def __init__(self, train_x: torch.Tensor, length_scale: float = 1.0, nu: float = 1.5):
+        """
+        Matern kernel.
+
+        :param length_scale:
+        :param nu:
+        """
+        super(MaternKernel, self).__init__(train_x, length_scale)
+        self.nu = torch.nn.Parameter(torch.tensor([nu]), requires_grad=True)
+
+    def _compute(self, X: torch.Tensor) -> torch.Tensor:
+        # Compute Euclidean distances
+        D = self.get_distance_matrix(X) ** 0.5
+        # Factor with gamma function
+        factor = 1 / gamma(self.nu) / 2**(self.nu - 1)
+        # Compute the term inside nu exponent and inside bessel function
+        M = D * (2*self.nu)**0.5 / self.length_scale
+        # Evaluate bessel function
+        B = modified_bessel_2nd(self.nu, M.numpy())
+
+        # Put pieces together
+        K = factor * (M ** self.nu) * torch.from_numpy(B)
+
+        # When distance is zero, nan is computed because of Kv(0) / gamma(0), put one instead
+        K[D == 0] = 1.0
+
         return K
 
 
