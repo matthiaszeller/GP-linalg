@@ -1,36 +1,37 @@
 from math import ceil
+from typing import Tuple
 
 import numpy as np
 import torch
+from scipy.special import gamma
+from scipy.special import kv as modified_bessel_2nd
 
 
 class Kernel:
     """
     Base abstract class for kernels.
     """
+    def __init__(self, train_x: torch.Tensor):
+        self.train_x = self._sanitize_input(train_x)
 
-    def compute(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the kernel matrix.
-        :param X: n x d input matrix, n is number of samples, d number of features
-        :return: n x n kernel matrix K with K_ij = K_ji = k(xi, xj), k the kernel function
-        """
-        # --- Preprocessing
-        # If the input is a 1D tensor, make it an n x 1 matrix (i.e only one feature, d=1)
+    def compute_kernel_and_grad(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+    @classmethod
+    def _sanitize_input(cls, X: torch.Tensor) -> torch.Tensor:
         if X.ndim == 1:
             X = X.unsqueeze(dim=1)
-        # --- Make child class compute with sanitized input
-        return self._compute(X)
-
-    def _compute(self, X: torch.Tensor) -> torch.Tensor:
-        # Child classes must implement this
-        pass
+        return X
 
 
 class RadialKernel(Kernel):
     """
     Base abstract class for radial kernels, i.e. k(xi, xj) = f(|xi - xj|_2^2) for some function f.
     """
+    def __init__(self, train_x: torch.Tensor):
+        super(RadialKernel, self).__init__(train_x)
+
+        self.D2 = self.get_distance_matrix(self.train_x)
 
     @classmethod
     def get_distance_matrix(cls, X: torch.Tensor, force_split=None):
@@ -81,15 +82,46 @@ class RadialKernel(Kernel):
         return split_indices[:-1]
 
 
-class RBFKernel(RadialKernel):
+class SquaredExponentialKernel(RadialKernel):
 
-    def __init__(self, charact_length: float = 1.0):
-        self.charact_length = charact_length
+    def __init__(self, train_x: torch.Tensor):
+        super(SquaredExponentialKernel, self).__init__(train_x)
 
-    def _compute(self, X: torch.Tensor) -> torch.Tensor:
-        D = self.get_distance_matrix(X)
-        K = torch.exp(-D / self.charact_length)
-        return K
+    def compute_kernel_and_grad(self, lengthscale: float) -> Tuple[torch.Tensor, torch.Tensor]:
+        K = torch.exp(-self.D2 / lengthscale)
+        # Gradient w.r.t. lengthscale: K * D2 / l^2, elemwise
+        grad = K * self.D2 / lengthscale**2
+        # Only one hyperparam -> add dimension zero of size 1
+        grad = grad.unsqueeze(dim=0)
+
+        return K, grad
+
+
+class MaternKernel(RadialKernel):
+
+    def __init__(self, train_x: torch.Tensor):
+        super(MaternKernel, self).__init__(train_x)
+
+    def compute_kernel_and_grad(self, lengthscale: float, nu: float) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Implementing this formula:
+        # https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.kernels.Matern.html
+
+        # Compute Euclidean distances
+        D = self.D2 ** 2
+        # Factor with gamma function
+        factor = 1 / gamma(nu) / 2**(nu - 1)
+        # Compute the term inside nu exponent and inside bessel function
+        M = D * (2*nu)**0.5 / lengthscale
+        # Evaluate bessel function
+        B = modified_bessel_2nd(nu, M.numpy())
+
+        # Put pieces together
+        K = factor * (M ** nu) * torch.from_numpy(B)
+
+        # When distance is zero, nan is computed because of Kv(0) / gamma(0), put one instead
+        K[D == 0] = 1.0
+
+        return K, None # derivative not implemented yet
 
 
 if __name__ == '__main__':
