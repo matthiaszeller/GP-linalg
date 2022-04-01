@@ -68,6 +68,14 @@ class TestCholesky(unittest.TestCase):
             condPinvA = eigs_PinvA.max() / eigs_PinvA.min()
             self.assertGreater(condA, condPinvA)
 
+    def test_callback(self):
+        n = 10
+        M = torch.randn(n, n)
+        A = M @ M.T + torch.eye(n) # add digonal to avoid early convergence
+        lst = []
+        P = pivoted_chol(A, 5, callback=lambda err_k: lst.append(err_k))
+        self.assertEqual(len(lst), 5)
+
 
 if __name__ == '__main__':
     unittest.main()
