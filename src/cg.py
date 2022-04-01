@@ -103,6 +103,18 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, cal
 
 def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
          callback: Callable = None) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    """
+    Modified batched conjugate gradient method.
+    Computes approximate solution to the matrix equation AX = B, and additionally returns partial tridiagonlizations.
+
+    :param Afun: matrix-matrix multiplication oracle X |-> AX, with A SPD
+    :param Pinv: matrix-matrix multiplication oracle with inverse of preconditionner
+    :param B: RHS of equation
+    :param X0: starting vector
+    :param k: number of CG and Lanczos steps
+    :param callback: function called at each CG step with current solution Xk
+    :return: tuple (Xk, Ts), approximate solution and list of tridiagonal matrices
+    """
     if B.ndim != X0.ndim:
         raise ValueError('B and X0 do not have the same number of dimensions')
 
@@ -125,6 +137,15 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
     # Those are ghost values to ease implementation since T_11 = 1/alpha1 = 1/alpha1 + beta0/alpha0, beta0=0, alpha0!=0
     t = B.shape[-1]
     alphas, betas = [[1.] * t], [[0.] * t]
+
+    # Callback for initial solution
+    if callback is not None:
+        if vector_input:
+            callback(X0.reshape(-1))
+        else:
+            callback(X0)
+
+    # Loop
     for i in range(1, k+1):
         # Precompute matrix-matrix product A x D
         AD = Afun(D)
@@ -148,7 +169,10 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
         Xprev = X
         RTZ_prev = RTZ
         if callback is not None:
-            callback(X)
+            if vector_input:
+                callback(X.reshape(-1))
+            else:
+                callback(X)
 
     # Recover Lanczos Hessenberg matrix from CG coefficients alpha, beta
     # t = number of simultaneous equations, i.e. size of 2nd dimension of B, X0
