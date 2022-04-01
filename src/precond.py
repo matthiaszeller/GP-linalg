@@ -1,3 +1,4 @@
+from typing import Callable
 
 import numpy as np
 import torch
@@ -17,11 +18,34 @@ class Preconditionner:
         self.n = K.shape[0]
         self.k = k
         self.sigma2 = sigma2
+        # Store a reference to the kernel matrix
+        self.K = K
 
     def __matmul__(self, other):
         """Matrix-matrix multiplication with preconditionner matrix."""
         # Child classes must implement this
         raise NotImplementedError
+
+    def compute_precond_eigs(self):
+        """
+        Compute the eigenvalues of the preconditionned matrix
+                    Phat^-1/2 Khat Phat^-1/2
+        in O(n^3) time. This is **not** used for the inference process (because of the complexity!),
+        rather a utility function to analyze numerical properties of the algorithms.
+        """
+        # The spectrum of those two matrices are the same:
+        # - Phat^-1/2 Khat Phat^-1/2
+        # - Phat^-1 Khat
+        # => eigenvalues are real
+
+        # We rather compute the second matrix
+        precond_mx = self.inv_fun(self.K + torch.eye(self.n) * self.sigma2)
+        # Compute explicitly (i.e, inefficiently) the eigenvalues
+        precond_eigs = torch.linalg.eigvals(precond_mx)
+        # We know the eigenvalues are real, see the above remark about equality of spectrum
+        precond_eigs = torch.real(precond_eigs)
+
+        return precond_eigs
 
     def inv_fun(self, y: Array):
         """Matrix-matrix multiplication oracle y |-> P^-1 y, i.e. with the *inverse* of the preconditionner matrix."""
@@ -35,6 +59,7 @@ class Preconditionner:
 
     def sample_gaussian(self, size: int):
         """Sample from the multivariate Gaussian distribution N(0, P) with P the preconditionner matrix."""
+        raise NotImplementedError
 
 
 class PartialCholesky(Preconditionner):
@@ -49,13 +74,15 @@ class PartialCholesky(Preconditionner):
 
         :param K: input PSD matrix without added diagonal
         :param max_rank: maximum rank of the preconditionner
-        :param sigma2: noise variance,
+        :param sigma2: noise variance
+        :param tol: tolerance for pivoted Cholesky algorithm, see docstring of `pivoted_chol`
         """
         # Initialize parent object
         super().__init__(K, max_rank, sigma2)
 
-        # Compute partial pivoted Cholesky
-        self.Lk = pivoted_chol(K, max_rank, tol)
+        # Compute partial pivoted Cholesky, store the trace errors at each step as made available by the algo
+        self.trace_errors = []
+        self.Lk = pivoted_chol(K, max_rank, tol, callback=lambda err_k: self.trace_errors.append(err_k))
 
         # If pivoted Cholesky converged earlier than max_rank, need to update the rank
         self.k = self.Lk.shape[-1]
