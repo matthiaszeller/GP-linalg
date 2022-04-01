@@ -1,9 +1,10 @@
 import logging
+from typing import Callable
 
 import torch
 
 
-def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12) -> torch.Tensor:
+def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12, callback: Callable = None) -> torch.Tensor:
     """
     Partial pivoted Cholesky factorization, see https://dl.acm.org/doi/10.1016/j.apnum.2011.10.001.
     Returns the partial Cholesky factor Lk such that Lk@Lk.R ~= A.
@@ -12,6 +13,7 @@ def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12) -> torch.Tensor:
     :param A: nxn PSD matrix
     :param k: rank of approximation, must be <= rank(A)
     :param tol: tolerance on trace norm of the error matrix E = A - L L^T
+    :param callback: function called at each iteration with input being the error at current step
     :return: Lm, nxm matrix, the "Cholesky factor" where m <= k, equality m=k depends on convergence w.r.t. tolerance
     """
     # TODO if lazy tensors use get_diag and get_row instead
@@ -60,12 +62,16 @@ def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12) -> torch.Tensor:
 
         # Compute error
         err = d[pi[m+1:]].sum()
+
+        if callback is not None:
+            callback(err)
+
         # Prepare next iteration
         m += 1
 
     # Notify user
     if err < tol and m < k:
-        print(f'pivoted cholesky converged after {m-1} steps')
+        print(f'pivoted cholesky converged after {m} steps')
 
     # Return "lower triangular" instead of "upper triangular"
     L = R.T
