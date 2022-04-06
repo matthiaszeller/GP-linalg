@@ -10,7 +10,7 @@ import torch
 Array = Union[np.ndarray, torch.Tensor]
 
 
-def compute_logdet_bounds(eigs: torch.Tensor, relerr: float, proba_error: float):
+def compute_logdet_bounds(eigs: torch.Tensor, relerr: float, proba_error: float, info = None):
     """
     Compute the bounds on the number of probe vectors and number of Lanczos steps
     :param eigs: eigenvalues of A (SPD)
@@ -35,6 +35,14 @@ def compute_logdet_bounds(eigs: torch.Tensor, relerr: float, proba_error: float)
     m_min = (condA + 1)**0.5 / 4 * log(4 / relerr / abstrace * n**2 * log(2*condA) * (1 + (condA + 1)**0.5))
 
     N_min, m_min = N_min.item(), m_min.item()
+
+    if info is not None:
+        info['eigs'] = eigs
+        info['condA'] = condA.item()
+        info['frob2'] = frob_square.item()
+        info['norm2'] = spectral.item()
+        info['trabs2'] = abstrace.item()**2
+
     return N_min, m_min
 
 
