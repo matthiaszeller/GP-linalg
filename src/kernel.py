@@ -1,5 +1,5 @@
 from math import ceil
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 import torch
@@ -13,11 +13,50 @@ class Kernel:
     """
     def __init__(self, train_x: torch.Tensor):
         self.train_x = self._sanitize_input(train_x)
+        self.sigma2 = 1.0
+        self.K = None
+        self.grad = None
 
-    def compute_kernel(self, *args, **kwargs) -> torch.Tensor:
+    def Khat(self):
+        return self.K + self.sigma2 * torch.eye(self.K.shape[0])
+
+    def Khat_fun(self, y: torch.Tensor):
+        return self.K @ y + self.sigma2 * y
+
+    def compute_kernel(self, hyperparams: torch.Tensor) -> torch.Tensor:
+        self.set_hyperparams(hyperparams)
+        self.K = self._compute_kernel()
+        return self.K
+
+    def _compute_kernel(self) -> torch.Tensor:
         raise NotImplementedError
 
-    def compute_kernel_and_grad(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+    def compute_kernel_and_grad(self, hyperparams: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Compute kernel
+        self.compute_kernel(hyperparams)
+        # Let child class compute gradient with respect to its own hyperparams
+        grad = self._compute_gradient()
+        # Compute the gradient w.r.t. noise variance: d Khat / dsigma2 = 2*sigma*I
+        grad_noise = 2 * self.sigma2**0.5 * \
+                     torch.eye(self.train_x.shape[0], dtype=self.train_x.dtype, device=self.train_x.device)
+
+        # Prepend the gradient w.r.t. sigma2
+        self.grad = torch.concat((grad_noise.unsqueeze(dim=0), grad))
+        return self.K, self.grad
+
+    def _compute_gradient(self) -> torch.Tensor:
+        raise NotImplementedError
+
+    def set_hyperparams(self, hyperparams: torch.Tensor):
+        raise NotImplementedError
+
+    def get_hyperparams(self) -> Tuple[torch.Tensor, List[str]]:
+        theta, desc = self._get_hyperparams()
+        theta = torch.concat((torch.tensor([self.sigma2]), theta))
+        desc = ['sigma2'] + desc
+        return theta, desc
+
+    def _get_hyperparams(self) -> Tuple[torch.Tensor, List[str]]:
         raise NotImplementedError
 
     @classmethod
@@ -34,55 +73,17 @@ class RadialKernel(Kernel):
     def __init__(self, train_x: torch.Tensor):
         super(RadialKernel, self).__init__(train_x)
 
-        self.D2 = self.get_squared_distance_matrix(self.train_x)
+        self.D = self.get_distance_matrix(self.train_x)
+        self.lengthscale = 1.0
 
-    @classmethod
-    def get_squared_distance_matrix(cls, X: torch.Tensor, force_split=None):
-        """
-        Given an n x d data matrix, compute the n x n matrix of euclidean squared distances,
-        i.e. D_ij = D_ji = |xi - xj|_2^2, with xi the ith row of X.
-        """
-        n, d = X.shape
-        if force_split is None:
-            if not X.is_cuda:
-                # Assumes we won't split
-                return cls._compute_distance_matrix(X, X)
-
-            free_memory, _ = torch.cuda.mem_get_info()
-            to_allocate = X.element_size() * n**2 * d
-            available_memory = free_memory - X.element_size() * n**2 # account for final result
-            available_memory *= 0.95
-            factor = available_memory / to_allocate
-            if factor > 1.0:
-                return cls._compute_distance_matrix(X, X)
-
-            n_splits = ceil(1 / factor) + 1
-            print(f'{free_memory*1e-6:.5} MB of free memory, need '
-                  f'{(to_allocate + free_memory - X.element_size() * n**2)*1e-6:.5} MB, '
-                  f'splitting computations in {n_splits} parts')
-        else:
-            n_splits = force_split
-
-        # Split calculations: take subsets sxd and nxd, diff matrix is s x n x d
-        D = torch.empty(n, n, device=X.device, dtype=X.dtype)
-        for id_start, id_end in cls.get_split_indices(n, n_splits):
-            D[:, id_start:id_end] = cls._compute_distance_matrix(X[id_start:id_end], X)
-
-        return D
-
-    @classmethod
-    def _compute_distance_matrix(cls, X1: torch.Tensor, X2: torch.Tensor):
-        D = X1 - X2.unsqueeze(dim=1)
-        # Compute squared 2-norm of differences
-        D = (D ** 2).sum(-1)
-        return D
+    def set_hyperparams(self, hyperparams: torch.Tensor):
+        self.sigma2, self.lengthscale = hyperparams
+        if self.lengthscale <= 0.0:
+            raise ValueError
 
     @staticmethod
-    def get_split_indices(n, n_splits):
-        ids = torch.linspace(0, n, n_splits+1, dtype=torch.int)
-        ids = ids.tolist() + [-1]
-        split_indices = list(zip(ids[:-1], ids[1:]))
-        return split_indices[:-1]
+    def get_distance_matrix(X: torch.Tensor) -> torch.Tensor:
+        return torch.cdist(X, X)
 
 
 class SquaredExponentialKernel(RadialKernel):
@@ -90,56 +91,66 @@ class SquaredExponentialKernel(RadialKernel):
     def __init__(self, train_x: torch.Tensor):
         super(SquaredExponentialKernel, self).__init__(train_x)
 
-    def compute_kernel(self, lengthscale: float) -> torch.Tensor:
-        K = torch.exp(-self.D2 / lengthscale)
+        self.lengthscale = 1.0
+
+    def _get_hyperparams(self) -> Tuple[torch.Tensor, List[str]]:
+        return torch.tensor([self.lengthscale]), ['lengthscale']
+
+    def _compute_kernel(self) -> torch.Tensor:
+        K = torch.exp(-self.D**2 / self.lengthscale)
         return K
 
-    def compute_kernel_and_grad(self, lengthscale: float) -> Tuple[torch.Tensor, torch.Tensor]:
-        K = self.compute_kernel(lengthscale)
+    def _compute_gradient(self) -> torch.Tensor:
         # Gradient w.r.t. lengthscale: K * D2 / l^2, elemwise
-        grad = K * self.D2 / lengthscale**2
+        grad = self.K * self.D**2 / self.lengthscale**2
         # Only one hyperparam -> add dimension zero of size 1
         grad = grad.unsqueeze(dim=0)
 
-        return K, grad
+        return grad
 
 
 class MaternKernel(RadialKernel):
 
     def __init__(self, train_x: torch.Tensor):
         super(MaternKernel, self).__init__(train_x)
+        self.nu = 1.5
 
-    def compute_kernel(self, lengthscale: float, nu: float) -> torch.Tensor:
+    def set_hyperparams(self, hyperparams: torch.Tensor):
+        self.sigma2, self.lengthscale, self.nu = hyperparams
+        self.nu = self.nu.item()
+        self.lengthscale = self.lengthscale.item()
+
+    def _compute_kernel(self) -> torch.Tensor:
         # Implementing this formula:
         # https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.kernels.Matern.html
 
-        # Compute Euclidean distances
-        D = self.D2 ** 0.5
+        # Compute Euclidean distancesself.
         # Factor with gamma function
-        factor = 1 / gamma(nu) / 2 ** (nu - 1)
+        factor = 1 / gamma(self.nu) / 2 ** (self.nu - 1)
         # Compute the term inside nu exponent and inside bessel function
-        M = D * (2 * nu) ** 0.5 / lengthscale
+        M = self.D * (2 * self.nu) ** 0.5 / self.lengthscale
         # Evaluate bessel function
-        B = modified_bessel_2nd(nu, M.numpy())
+        B = modified_bessel_2nd(self.nu, M.numpy())
 
         # Put pieces together
-        K = factor * (M ** nu) * torch.from_numpy(B)
+        K = factor * (M ** self.nu) * torch.from_numpy(B)
 
         # When distance is zero, nan is computed because of Kv(0) / gamma(0), put one instead
-        K[D == 0] = 1.0
+        K[self.D == 0] = 1.0
 
         return K
 
-    def compute_kernel_and_grad(self, lengthscale: float, nu: float) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _compute_gradient(self) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
 
 if __name__ == '__main__':
-    N, d = 1000, 1000
-    X = torch.randn(N, d, device='cuda', dtype=torch.double)
+    N, d = 100, 1000
+    X = torch.linspace(0, 1, N)
     l = 1.0
-    k = RadialKernel()
-    D = k.get_squared_distance_matrix(X)
+    k = SquaredExponentialKernel(X)
+    theta = torch.tensor([0.5, 1.])
+    K, grad = k.compute_kernel_and_grad(theta)
 
     # Ktrue = torch.empty(N, N)
     # for i in range(N):

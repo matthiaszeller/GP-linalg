@@ -7,6 +7,8 @@ import torch
 from src.kernel import SquaredExponentialKernel, MaternKernel
 from sklearn.gaussian_process.kernels import Matern as SklearnMatern
 
+torch.set_default_dtype(torch.double)
+
 
 class TestKernel(unittest.TestCase):
 
@@ -14,20 +16,20 @@ class TestKernel(unittest.TestCase):
         n = 100
         x = torch.randn(n)
         k = SquaredExponentialKernel(x)
-        D = k.D2
+        D = k.D
 
         Dtrue = torch.empty(n, n)
         for i in range(n):
             for j in range(n):
-                Dtrue[i, j] = (x[i] - x[j]).norm() ** 2
+                Dtrue[i, j] = (x[i] - x[j]).norm()
 
-        torch.testing.assert_allclose(D, Dtrue, atol=1e-16, rtol=1e-15)
+        torch.testing.assert_allclose(D, Dtrue, atol=1e-10, rtol=1e-9)
 
     def test_squared_exponential_kernel(self):
         n = 100
         x = torch.randn(n)
         l = 2.0
-        K = SquaredExponentialKernel(x).compute_kernel(l)
+        K = SquaredExponentialKernel(x).compute_kernel(torch.tensor([0.1, l]))
 
         # Compute squared distance matrix
         D2 = torch.empty(n, n)
@@ -51,7 +53,7 @@ class TestKernel(unittest.TestCase):
             for nu in nus:
                 k_sklearn = SklearnMatern(length_scale=l, nu=nu)
 
-                K = k.compute_kernel(l, nu)
+                K = k.compute_kernel(torch.tensor([0.1, l, nu]))
                 K_sk = k_sklearn(x)
                 torch.testing.assert_allclose(K, torch.from_numpy(K_sk))
 
