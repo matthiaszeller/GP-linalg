@@ -102,7 +102,7 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, cal
 
 
 def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
-         callback: Callable = None) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+         callback: Callable = None, tol=1e-16) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     """
     Modified batched conjugate gradient method.
     Computes approximate solution to the matrix equation AX = B, and additionally returns partial tridiagonlizations.
@@ -173,6 +173,11 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
                 callback(X.reshape(-1))
             else:
                 callback(X)
+
+        # Check convergence
+        rnorms = torch.norm(R, dim=0)
+        if rnorms.max() < tol:
+            break
 
     # Recover Lanczos Hessenberg matrix from CG coefficients alpha, beta
     # t = number of simultaneous equations, i.e. size of 2nd dimension of B, X0
