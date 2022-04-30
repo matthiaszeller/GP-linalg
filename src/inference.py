@@ -53,7 +53,8 @@ from src.quadrature import lanczos_quadrature
 #     return logdet
 
 
-def inference(y: torch.Tensor, K: Kernel, k: int, N: int, m: int, return_avg=True, info=None):
+def inference(y: torch.Tensor, K: Kernel, k: int, N: int, m: int,
+              mbcg_tol: float = 1e-10, return_avg=True, info=None):
     """
     Gaussian process inference engine. Given a kernel matrix K, compute:
         - log det(K_hat)
@@ -78,7 +79,7 @@ def inference(y: torch.Tensor, K: Kernel, k: int, N: int, m: int, return_avg=Tru
     Z = torch.concat((y.reshape(-1, 1), Z), dim=1)
 
     # Run mBCG to compute partial tridiagonalizations
-    X, Ts = mbcg(K.Khat_fun, P.inv_fun, Z, torch.zeros_like(Z), m)
+    X, Ts = mbcg(K.Khat_fun, P.inv_fun, Z, torch.zeros_like(Z), m, tol=mbcg_tol)
 
     # For each probe vector zi, compute lanczos quadrature to estimate zi^T log(Khat) zi
     # the first tridiag matrix corresponds to y, we discard it

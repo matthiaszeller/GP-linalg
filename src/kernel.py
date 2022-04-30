@@ -13,14 +13,18 @@ class Kernel:
     """
     def __init__(self, train_x: torch.Tensor):
         self.train_x = self._sanitize_input(train_x)
-        self.sigma2 = 1.0
+        self.sigma2 = None
         self.K = None
         self.grad = None
 
     def Khat(self):
+        """Get the kernel matrix with an added diagonal.
+        compute_kernel or compute_kernel_and_grad must have been be called before."""
         return self.K + self.sigma2 * torch.eye(self.K.shape[0])
 
     def Khat_fun(self, y: torch.Tensor):
+        """Get a function x |-> Khat x.
+        compute_kernel or compute_kernel_and_grad must have been called before."""
         return self.K @ y + self.sigma2 * y
 
     def compute_kernel(self, hyperparams: torch.Tensor) -> torch.Tensor:
@@ -141,7 +145,9 @@ class MaternKernel(RadialKernel):
         return K
 
     def _compute_gradient(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
+        grad = torch.empty_like(self.K) * torch.nan
+        grad = grad.unsqueeze(dim=0)
+        return grad
 
 
 if __name__ == '__main__':
