@@ -13,7 +13,16 @@ from src.precond import PartialCholesky
 
 class GPModel:
 
-    def __init__(self, train_x: torch.Tensor, train_y: torch.Tensor, kernel: Kernel, hyperparams: torch.Tensor):
+    def __init__(self, train_x: torch.Tensor, train_y: torch.Tensor, kernel: Kernel,
+                 hyperparams: torch.Tensor, use_tensorflow_pivoted_cholesky: bool = False):
+        """
+        Gaussian process inference model.
+        :param train_x: training features
+        :param train_y: training targets
+        :param kernel: kernel class
+        :param hyperparams: initial hyperparameters of the kernel function
+        :param use_tensorflow_pivoted_cholesky: for numerical experiments to speedup computations
+        """
         super(GPModel, self).__init__()
 
         self.train_x = train_x
@@ -27,14 +36,18 @@ class GPModel:
         self._ysolve = None
 
     def _call_l(self, theta, *args):
+        """Helper function called by blackbox optimizer for evaluating likelihood"""
         self.hyperparams = theta
         L, dL, ysolve = self.compute_likelihood(*args)
         self._buffer_l = L
         self._buffer_dl = dL
         self._ysolve = ysolve
+        # The optimizer will minimize the function -> minus sign to maximize
         return - L.item()
 
     def _call_dl(self, theta, *args):
+        """Helper function called by blackbox optimizer for evaluating likelihood gradient"""
+        # Again, minus sign
         return - self._buffer_dl.numpy()
 
     def compute_pred_cov(self, k=10, m=10, mbcg_tol=1e-10):
@@ -45,6 +58,15 @@ class GPModel:
         return cov
 
     def train(self, niter: int = 10, k=10, N=10, m=10, mbcg_tol=1e-10):
+        """
+        Train the Gaussian process with mBCG algorithm and an optimizer
+        :param niter: iterations of the optimizer
+        :param k: rank of low-rank approximation, i.e. number of pivoted Cholesky steps
+        :param N: number of probe vectors
+        :param m: max number of Lanczos steps
+        :param mbcg_tol: tolerance for mBCG algorithm
+        :return: predictive mean, predictive covariance, marginal log likelihood
+        """
         # TODO: only works for kernel with 2 hyperparams
         res = minimize(
             fun=self._call_l,
@@ -86,6 +108,16 @@ class GPModel:
     #     return pred_mean
 
     def compute_likelihood(self, k=10, N=20, m=10, mbcg_tol=1e-10, callback_inference=None, info=None):
+        """
+        Approximate marginal log likelihood with mBCG algorithm
+        :param k: rank of pivoted Cholesky approximation
+        :param N: number of probe vectors
+        :param m: max number of Lanczos steps
+        :param mbcg_tol: tolerance for mBCG
+        :param callback_inference: callback function with input (ysolve, logdet, traces)
+        :param info: None or a dictionnary to bookkeep the number of mBCG iterations
+        :return: likelihood, gradient of likelihood, ysolve
+        """
         _, gradK = self.kernel.compute_kernel_and_grad(self.hyperparams)
 
         ysolve, logdet, traces = inference(self.train_y, self.kernel, k=k, N=N, m=m, mbcg_tol=mbcg_tol, info=info)
@@ -104,7 +136,7 @@ class GPModel:
         dL = []
         for i in range(gradK.shape[0]):
             dl = ysolve.T @ (gradK[i] @ ysolve) - traces[i]
-            dL.append(dl)
+            dL.append(0.5 * dl)
 
         dL = torch.tensor(dL)
 
