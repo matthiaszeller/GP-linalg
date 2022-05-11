@@ -123,6 +123,8 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
         B = B.reshape(-1, 1)
         X0 = X0.reshape(-1, 1)
 
+    # Norms of the right hand sides (used for convergence monitoring)
+    Bnorms = B.norm(dim=0)
     # Residuals of starting point
     R = B - Afun(X0)
     # Preconditioned residuals
@@ -175,7 +177,7 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
                 callback(X)
 
         # Check convergence
-        rnorms = torch.norm(R, dim=0)
+        rnorms = torch.norm(R, dim=0) / Bnorms
         if rnorms.max() < tol:
             break
 
