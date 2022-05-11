@@ -7,11 +7,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Add the project directory in the Python path
 print('- adding project root in Python path')
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# TODO torch double not float
 print('- setting default torch dtype to float64')
 torch.set_default_dtype(torch.double)
 
@@ -25,7 +23,7 @@ matplotlib.rcParams.update({
     'text.usetex': True,
     'text.latex.preamble': r'\usepackage{gensymb}',
 })
-# Increase font size
+# Font size
 SMALL_SIZE, MEDIUM_SIZE, BIGGER_SIZE = 14, 16, 18
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
@@ -37,15 +35,19 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
 
-def process_figure(filename, figures_path='figs'):
-    """Prettify figure (e.g. despine and make it latex-like) and save it to file"""
+def process_figure(filename, figures_path='figs', save_eps=False, tight=True):
+    """Prettify figure (despine, fit better layout) and save it to file"""
     path = Path(figures_path)
     if not path.exists():
         path.mkdir()
         
     sns.despine()
-    plt.tight_layout()
+    if tight:
+        plt.tight_layout()
+    
     filepath = path.joinpath(filename)
+    
     plt.savefig(str(filepath) + '.pdf', bbox_inches='tight')
-    plt.savefig(str(filepath) + '.eps', bbox_inches='tight')
+    if save_eps:
+        plt.savefig(str(filepath) + '.eps', bbox_inches='tight')
 
