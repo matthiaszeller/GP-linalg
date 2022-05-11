@@ -1,8 +1,12 @@
-from typing import Callable
+
+
+from __future__ import annotations
+
+from copy import deepcopy
+from math import log
 
 import numpy as np
 import torch
-from math import log
 
 from src.chol import pivoted_chol
 from src.utils import Array
@@ -63,7 +67,8 @@ class Preconditionner:
 
 
 class PartialCholesky(Preconditionner):
-    def __init__(self, K: torch.Tensor, max_rank: int, sigma2: float, tol=1e-12):
+    def __init__(self, K: torch.Tensor, max_rank: int, sigma2: float, tol=1e-12,
+                 use_tensorflow_algorithm: bool = False, verbose: bool = False):
         """
         Initialize partial pivoted Cholesky preconditionner of rank at most k.
         If pivoted Cholesky converges before k steps, then the rank will be smaller.
@@ -76,13 +81,23 @@ class PartialCholesky(Preconditionner):
         :param max_rank: maximum rank of the preconditionner
         :param sigma2: noise variance
         :param tol: tolerance for pivoted Cholesky algorithm, see docstring of `pivoted_chol`
+        :param use_tensorflow_algorithm: for numerical experiments, use fast implementation
         """
         # Initialize parent object
         super().__init__(K, max_rank, sigma2)
 
         # Compute partial pivoted Cholesky, store the trace errors at each step as made available by the algo
         self.trace_errors = []
-        self.Lk = pivoted_chol(K, max_rank, tol, callback=lambda err_k: self.trace_errors.append(err_k))
+        if use_tensorflow_algorithm is False:
+            self.Lk, self.pivots = pivoted_chol(K, max_rank, tol,
+                                                callback=lambda err_k: self.trace_errors.append(err_k),
+                                                return_pivots=True, verbose=verbose)
+            self.trace_errors = torch.tensor(self.trace_errors)
+        else:
+            import tensorflow as tf
+            import tensorflow_probability as tfp
+            self.Lk = tfp.math.pivoted_cholesky(tf.convert_to_tensor(K), max_rank, diag_rtol=tol)
+            self.Lk = torch.from_numpy(self.Lk.numpy())
 
         # If pivoted Cholesky converged earlier than max_rank, need to update the rank
         self.k = self.Lk.shape[-1]
@@ -92,6 +107,28 @@ class PartialCholesky(Preconditionner):
 
     def __matmul__(self, other):
         return torch.linalg.multi_dot((self.Lk, self.Lk.T, other)) + self.sigma2 * other
+
+    def truncate(self, k: int) -> PartialCholesky:
+        """
+        Decrease the rank of the pivoted Cholesky approximation,
+        i.e, return a copy of the PartialCholesky object and process it as if only k steps were done.
+        Used to speedup numerical experiments (avoid rerunning the algo).
+        :param k: the desired lower rank, must be <= current rank
+        :return: new PartialCholesky object
+        """
+        assert k <= self.k
+        P = deepcopy(self)
+        if k == self.k:
+            return P # just return an unaltered copy
+
+        # Update new rank
+        P.k = k
+        P.Lk = P.Lk[:, :k]
+        P.pivots = P.pivots[:k]
+        P.trace_errors = P.trace_errors[:k+1]
+        # Recompute k x k matrix
+        P.LTL = P.Lk.T @ P.Lk
+        return P
 
     def Pk_hat(self):
         """Construct explicitly the full preconditionner matrix Pk_hat = L L^T + sigma2 I"""

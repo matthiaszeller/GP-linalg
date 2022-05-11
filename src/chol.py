@@ -4,7 +4,8 @@ from typing import Callable
 import torch
 
 
-def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12, callback: Callable = None) -> torch.Tensor:
+def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12, callback: Callable = None,
+                 return_pivots: bool = False, verbose: bool = False) -> torch.Tensor:
     """
     Partial pivoted Cholesky factorization, see https://dl.acm.org/doi/10.1016/j.apnum.2011.10.001.
     Returns the partial Cholesky factor Lk such that Lk@Lk.R ~= A.
@@ -70,13 +71,16 @@ def pivoted_chol(A: torch.Tensor, k: int, tol: float = 1e-12, callback: Callable
         m += 1
 
     # Notify user
-    if err < tol and m < k:
+    if err < tol and m < k and verbose:
         print(f'pivoted cholesky converged after {m} steps')
 
     # Return "lower triangular" instead of "upper triangular"
     L = R.T
     # Also, truncate the matrix in case convergence was reached because max number of iterations
     L = L[:, :m]
+
+    if return_pivots:
+        return L, pi
     return L
 
 
@@ -84,8 +88,17 @@ if __name__ == '__main__':
     import tensorflow_probability as tfp
     import tensorflow as tf
     from scipy.stats import ortho_group
+    import numpy as np
 
     torch.set_default_dtype(torch.double)
+
+    n = 100
+    A = np.tril(np.ones((n, n)))
+    A = A @ A.T
+    A = torch.from_numpy(A)
+    Lk, pi = pivoted_chol(A, k=n, return_pivots=True)
+    L = Lk[pi]
+    a=1
 
     # Full rank
     n, k = 5, 5
