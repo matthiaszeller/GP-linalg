@@ -65,6 +65,8 @@ class Kernel:
 
     @classmethod
     def _sanitize_input(cls, X: torch.Tensor) -> torch.Tensor:
+        if isinstance(X, np.ndarray):
+            X = torch.from_numpy(X)
         if X.ndim == 1:
             X = X.unsqueeze(dim=1)
         return X

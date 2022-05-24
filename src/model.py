@@ -14,7 +14,8 @@ from src.precond import PartialCholesky
 class GPModel:
 
     def __init__(self, train_x: torch.Tensor, train_y: torch.Tensor, kernel: Kernel,
-                 hyperparams: torch.Tensor, use_tensorflow_pivoted_cholesky: bool = False):
+                 hyperparams: torch.Tensor, use_tensorflow_pivoted_cholesky: bool = False,
+                 compute_true_quantities: bool = False):
         """
         Gaussian process inference model.
         :param train_x: training features
@@ -22,26 +23,53 @@ class GPModel:
         :param kernel: kernel class
         :param hyperparams: initial hyperparameters of the kernel function
         :param use_tensorflow_pivoted_cholesky: for numerical experiments to speedup computations
+        :param compute_true_quantities: whether to compute the ground truth likelihood for numerical experiments
         """
         super(GPModel, self).__init__()
+
+        if isinstance(train_x, np.ndarray):
+            train_x = torch.from_numpy(train_x)
+        if isinstance(train_y, np.ndarray):
+            train_y = torch.from_numpy(train_y)
 
         self.train_x = train_x
         self.train_y = train_y
         self.kernel = kernel
+        self.verbose = False
 
         self.hyperparams = hyperparams.clone()
 
+        # Helper variables for the blackbox optimizer
         self._buffer_l = None
         self._buffer_dl = None
         self._ysolve = None
 
+        # Track likelihood
+        self.training_likelihoods = []
+        self.training_likelihoods_grad = []
+
+        # For numerical experiments
+        self._compute_true_quantities = compute_true_quantities
+        self._true_training_likelihoods = []
+        self._true_training_likelihoods_grad = []
+
     def _call_l(self, theta, *args):
         """Helper function called by blackbox optimizer for evaluating likelihood"""
+        # Update the hyperparams
         self.hyperparams = theta
+        # Compute likelihood
         L, dL, ysolve = self.compute_likelihood(*args)
+        if self.verbose:
+            pred_mean = self.kernel.K @ ysolve
+            mse = ((self.train_y - pred_mean) ** 2).mean()
+            print(f'likelihood {f"{L.item():.5}":<15} MSE {f"{mse.item():.5}":<15} params {self.hyperparams.tolist()}')
+        # Store for blackbox optimizer
         self._buffer_l = L
         self._buffer_dl = dL
         self._ysolve = ysolve
+        # Keep track of likelihood
+        self.training_likelihoods.append(L)
+        self.training_likelihoods_grad.append(dL)
         # The optimizer will minimize the function -> minus sign to maximize
         return - L.item()
 
@@ -57,7 +85,7 @@ class GPModel:
         cov = self.kernel.K - self.kernel.K.T @ res
         return cov
 
-    def train(self, niter: int = 10, k=10, N=10, m=10, mbcg_tol=1e-10):
+    def train(self, niter: int = 10, k=10, N=10, m=10, mbcg_tol=1e-10, verbose: bool = True):
         """
         Train the Gaussian process with mBCG algorithm and an optimizer
         :param niter: iterations of the optimizer
@@ -67,6 +95,7 @@ class GPModel:
         :param mbcg_tol: tolerance for mBCG algorithm
         :return: predictive mean, predictive covariance, marginal log likelihood
         """
+        self.verbose = verbose
         # TODO: only works for kernel with 2 hyperparams
         res = minimize(
             fun=self._call_l,
@@ -140,6 +169,21 @@ class GPModel:
 
         dL = torch.tensor(dL)
 
+        if self._compute_true_quantities:
+            true_logdet = torch.logdet(self.kernel.Khat())
+            A = torch.linalg.solve(self.kernel.Khat(), kernel.grad)
+            true_traces = torch.tensor([M.trace() for M in A])
+            true_ysolve = torch.linalg.solve(self.kernel.Khat(), self.train_y)
+            # Likelihood
+            true_L = -0.5 * true_logdet - 0.5 * self.train_y.T @ true_ysolve - n/2 * log(2*torch.pi)
+            true_dL = []
+            for i in range(gradK.shape[0]):
+                dl = true_ysolve.T @ gradK[i] @ true_ysolve - true_traces[i]
+                true_dL.append(0.5 * dl)
+
+            self._true_training_likelihoods.append(true_L)
+            self._true_training_likelihoods_grad.append(torch.tensor(true_dL))
+
         return L, dL, ysolve
 
 
@@ -161,7 +205,7 @@ if __name__ == '__main__':
         return likelihood
 
     n, d = 100, 1
-    sigma2 = 0.1
+    sigma2 = 0.01
     x = torch.rand(n, d)
     f = lambda x: (2*torch.pi*x).sin()
     y = f(x) + torch.randn_like(x) * sigma2**0.5
@@ -170,7 +214,7 @@ if __name__ == '__main__':
     hyperparams = torch.tensor([0.01, lengthscale])
 
     kernel = SquaredExponentialKernel(x)
-    model = GPModel(x, y, kernel, hyperparams)
+    model = GPModel(x, y, kernel, hyperparams, compute_true_quantities=True)
     pred_mean, pred_cov, l = model.train()
 
     x = x.squeeze(-1)
@@ -184,6 +228,21 @@ if __name__ == '__main__':
                      label='+- std', color='green', alpha=.2)
     plt.legend()
     plt.show()
+
+    import pandas as pd
+    print('dataset \n\n')
+    #df = pd.read_csv('../tutorial/data/airfoil_self_noise.dat', sep='\t', header=None)
+    df = pd.read_csv('../tutorial/data/dataset_airfoil.csv')
+    X = df.values[:, :-1]
+    y = df.values[:, -1]
+    X = (X - X.mean(0)) / X.std(0)
+    y = (y - y.mean()) / y.std()
+    kernel = SquaredExponentialKernel(X)
+    kernel.compute_kernel(hyperparams)
+    P = PartialCholesky(kernel.K, 10, 0.01)
+    model = GPModel(X, y, kernel, hyperparams, compute_true_quantities=True)
+    pred_mean, pred_cov, l = model.train()
+
     #
     # L, dL, ysolve = model.compute_likelihood(k=15, N=1, m=20)
     #
