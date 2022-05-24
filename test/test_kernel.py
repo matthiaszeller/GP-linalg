@@ -41,7 +41,7 @@ class TestKernel(unittest.TestCase):
         # Compute actual kernel
         Ktrue = torch.exp(-D2 / l)
 
-        torch.testing.assert_allclose(K, Ktrue, atol=1e-16, rtol=1e-16)
+        torch.testing.assert_allclose(K, Ktrue, atol=1e-14, rtol=1e-14)
 
     def test_matern_kernel(self):
         n = 100

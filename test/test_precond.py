@@ -83,13 +83,13 @@ class TestPreconditionner(unittest.TestCase):
         torch.testing.assert_allclose(X, Xtrue)
 
     def test_logdet(self):
-        sigma2 = 2.0
+        sigma2 = 0.1
         for k in (3, 5, 10, 20, 50):
             P = PartialCholesky(self.A, k, sigma2)
             Phat = P.Lk @ P.Lk.T + sigma2 * torch.eye(self.n)
             logdet = P.logdet()
             true = torch.logdet(Phat).item()
-            self.assertAlmostEqual(logdet, true, places=10)
+            self.assertAlmostEqual(logdet, true, places=9)
 
     def test_sampling(self):
         max_rank = 5
