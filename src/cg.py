@@ -9,6 +9,7 @@ import torch
 from src import utils
 from src.lanczos import lanczos_linear_system
 from src.utils import Array
+import numpy as np
 
 
 def cg_vanilla(Afun: Callable, b: Array, x0: Array, k: int, callback: Callable = None) -> Array:
@@ -101,8 +102,8 @@ def pcg_vanilla(Afun: Callable, Pinv: Callable, b: Array, x0: Array, k: int, cal
     return x
 
 
-def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
-         callback: Callable = None, tol=1e-16) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int, callback: Callable = None,
+         callback_residuals: Callable = None, tol=1e-16) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     """
     Modified batched conjugate gradient method.
     Computes approximate solution to the matrix equation AX = B, and additionally returns partial tridiagonlizations.
@@ -115,6 +116,10 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
     :param callback: function called at each CG step with current solution Xk
     :return: tuple (Xk, Ts), approximate solution and list of tridiagonal matrices
     """
+    # if isinstance(B, np.ndarray):
+    #     B = torch.from_numpy(B)
+    # if isinstance(X0, np.ndarray):
+    #     X0 = torch.from_numpy(X0)
     if B.ndim != X0.ndim:
         raise ValueError('B and X0 do not have the same number of dimensions')
 
@@ -124,7 +129,7 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
         X0 = X0.reshape(-1, 1)
 
     # Norms of the right hand sides (used for convergence monitoring)
-    Bnorms = B.norm(dim=0)
+    Bnorms = (B ** 2).sum(0) ** 0.5#B.norm(dim=0)
     # Residuals of starting point
     R = B - Afun(X0)
     # Preconditioned residuals
@@ -146,6 +151,8 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
             callback(X0.reshape(-1))
         else:
             callback(X0)
+    if callback_residuals is not None:
+        callback_residuals(R.norm(dim=0) / Bnorms)
 
     # Loop
     for i in range(1, k+1):
@@ -177,7 +184,9 @@ def mbcg(Afun: Callable, Pinv: Callable, B: Array, X0: Array, k: int,
                 callback(X)
 
         # Check convergence
-        rnorms = torch.norm(R, dim=0) / Bnorms
+        rnorms = (R ** 2).sum(0) ** 0.5#torch.norm(R, dim=0) / Bnorms
+        if callback_residuals is not None:
+            callback_residuals(rnorms)
         if rnorms.max() < tol:
             break
 
