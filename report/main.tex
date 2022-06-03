@@ -14,68 +14,17 @@
 % https://en.wikibooks.org/wiki/LaTeX/Floats,_Figures_and_Captions
 \usepackage{graphicx,float}
 
+% Subfigures
+\usepackage{subfigure}
+
 % References
 % https://www.overleaf.com/learn/latex/Bibliography_management_in_LaTeX
 % https://en.wikibooks.org/wiki/LaTeX/Bibliography_Management
 \usepackage{biblatex}
 \addbibresource{report/references.bib}
 
-
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> %
-%           MATHS                        %
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> % 
-% https://www.overleaf.com/learn/latex/Mathematical_expressions
-% https://en.wikibooks.org/wiki/LaTeX/Mathematics
-\usepackage{amsmath,amsfonts,amssymb,mathtools, bbold, bbm}
-
-% Algorithms
-% https://www.overleaf.com/learn/latex/algorithms
-% https://en.wikibooks.org/wiki/LaTeX/Algorithms
-%\usepackage[ruled,vlined]{algorithm2e}
-%\usepackage{algorithmic}
-\usepackage[ruled,vlined]{algorithm2e}
-% Colored comments
-\newcommand\mycommfont[1]{\ttfamily\textcolor{blue}{#1}}
-\SetCommentSty{mycommfont}
-
-
-% Make mathbb nice 
-% https://tex.stackexchange.com/questions/58098/what-are-all-the-font-styles-i-can-use-in-math-mode
-\AtBeginDocument{
-  \DeclareSymbolFont{AMSb}{U}{msb}{m}{n}
-  \DeclareSymbolFontAlphabet{\mathbb}{AMSb}
-}
-
-% Double struck zero matrix
-% https://tex.stackexchange.com/a/399950/217578
-\DeclareMathAlphabet{\mymathbb}{U}{BOONDOX-ds}{m}{n}
-
-% Custom commands & operators: vectors, matrices & related
-\newcommand{\vect}[1]{\boldsymbol{\mathbf{#1}}}
-\newcommand{\R}{\mathbb R}
-\newcommand{\norm}[1]{\Vert #1 \Vert}
-\DeclareMathOperator{\trace}{Tr}
-\DeclareMathOperator{\E}{\mathbb{E}}
-\DeclareMathOperator{\Var}{\mathbb{V}ar}
-
-% Identity matrix: with or without size argument
-% https://tex.stackexchange.com/questions/409760/detect-no-argument-in-newcommand
-\makeatletter
-\def\Id{\@ifnextchar[\Id@command{\mathbb I}}
-\def\Id@command[#1]{\mathbb I_{#1}}
-\makeatother
-
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< %
-%           MATHS                        %
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< %
-
-\usepackage{amsthm} % proof
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{corollary}{Corollary}[theorem]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{proposition}[theorem]{Proposition}
-\newtheorem*{remark}{Remark}
-\newtheorem{observation}[theorem]{Observation}
+% Math & algorithms
+\input{setup_maths}
 
 % Title content
 \title{
@@ -89,58 +38,77 @@
 
 \maketitle
 
-\section{Notation}
+\section{Introduction}
 
-\begin{itemize}
-    \item Scalars are lowercase letters (e.g. $a, \alpha$), vectors are bold letters (e.g. $\vect a, \vect \alpha)$, matrices are uppercase letters (e.g. $A, M$)
-    \item Scalar random variables are uppercase (e.g. $X$), vector random variables are bold uppercase (e.g. $\vect X$)
-    \item Special matrices: $n\times n$ identity matrix $\Id[n]$ (or $\Id$ when unambiguous), $m\times n$ matrix full of zeros $\mymathbb 0_{m\times n}$
-\end{itemize}
+Gaussian process (GP) regression is a non-parametric supervised method that extends Bayesian linear regression \cite{schulz_tutorial_2018, rasmussen_gaussian_2005, liu_when_2019, deringer_gaussian_2021}.
+Considering the problem of inferring an unknown function $f$ given some inputs and noisy outputs, the GP regression setting models the prior on $f$ as a GP. Based on a-priori knowledge (e.g. the smoothness of $f$), one sets the GP mean and covariance functions and performs inference in the induced function space. 
+%, which is entirely determined by its mean and covariance function. Hence, one parametrizes the prior function space according to  
+%Considering the problem of inferring an unknown function $f$ specifying the relationship between inputs $\vect x_i$ and outputs $y_i$, the GP regression framework models $f$ as a GP, and hence models a Gaussian probability distribution over function values\footnote{for a fixed and finite number of points at which we evaluate $f$.}. 
 
+GP models are attractive due to their ability to approximate a wide range of functions with interpretable hyperparameters \cite{rasmussen_gaussian_2005, belyaev_exact_2014},
+they provide uncertainty estimates \cite{rasmussen_gaussian_2005, seeger_gaussian_2004}
+and cast hyperparameter selection as an optimization problem \cite{gorbach_model_2017, rasmussen_gaussian_2005, seeger_gaussian_2004}.
+However, exact \textcolor{red}{exact????} GP inference is traditionally done with Cholesky decomposition and requires $\mathcal O(n^2)$ memory and $\mathcal O(n^3)$ time complexity, with $n$ the number of samples in the training set, therefore suffering from scalability to large datasets. The GPyTorch framework \cite{gardner_gpytorch_2021} proposes a more efficient approach for GP inference that i) achieves sub-cubic time complexity for exact\footnote{Exact refers to the fact that one can choose parameters of the algorithms to reach machine precision, although those parameters may be unknown apriori.} inference under some suitable conditions\footnote{In the paper, it is stated that GPyTorch reduces exact GP inference to $\mathcal O(n^2)$ time complexity, which may be true in practice depending on the dataset at hand. This is related to the data distribution and the spectrum of the kernel matrix, see the discussion in the results section.}, ii) requires the user to only provide blackbox matrix-matrix multiplication oracles with the kernel matrix and its derivative.
+As a consequence the framework disentangles the model from the inference engine, greatly easing implementation for the user, specifically for complex GP models (e.g., combining different kernels or using GP approximations for large datasets). 
 
-\section{Gaussian Processes for Machine Learning}
+The core of GPyTorch is based on a combination of conjugate gradients, Lanczos quadrature and stochastic trace estimation to compute the likelihood of the model hyperparameters and its gradient. A specialized preconditioner is used to speedup CG convergence and reduce the overall complexity.
 
-Gaussian Processes are a generalization of Gaussian probability distributions which can be used in a supervised learning setting to perform regression or classification. A Gaussian Process is a stochastic process whose any finite number of points can be characterized by a joint normal distribution. Considering the supervised problem of inferring an unknown function $f$ modeling the relationship between inputs $\vect x_i$ and outputs $y_i$, the Gaussian Process framework consists in modeling the estimator function $f^\star$ as a Gaussian process. We will note $f^\star \sim \mathcal{GP}(\mu, k)$ with $\mu : \R^d \to \R$ the mean function and $k: \R^d \times \R^d \to \R$ the covariance function. 
+The rest of this introduction reviews GP regression and how this can be derived from Bayesian linear models. We introduce the different quantities involved and the approach for estimating unknown parameters. In section~\ref{sec:training}, we discuss the training of GPs for regression, the algorithms used in GPyTorch and the underlying theory. Section~\ref{sec:precond} exposes a preconditioning approach suited for some kernel matrices. The convergence is then analyzed and discussed in section~\ref{sec:convergence}. Numerical results are eventually presented in section~\ref{sec:numexp}.
+\textcolor{red}{Generally, this introduction is good.}
+
+%Gaussian Processes are a generalization of Gaussian probability distributions which can be used in a supervised learning setting to perform regression (or classification). Considering the problem of inferring an unknown function $f$ specifying the relationship between inputs $\vect x_i$ and outputs $y_i$, the Gaussian Process framework consists in modeling an estimator function $f^\star$ as a Gaussian process. Exact inference requires inversion of 
+
+%Gaussian Processes are a generalization of Gaussian probability distributions which can be used in a supervised learning setting to perform regression or classification. A Gaussian Process is a stochastic process whose any finite number of points can be characterized by a joint normal distribution. Considering the supervised problem of inferring an unknown function $f$ modeling the relationship between inputs $\vect x_i$ and outputs $y_i$, the Gaussian Process framework consists in modeling the estimator function $f^\star$ as a Gaussian process. We will note $f^\star \sim \mathcal{GP}(\mu, k)$ with $\mu : \R^d \to \R$ the mean function and $k: \R^d \times \R^d \to \R$ the covariance function. 
 
 
 \subsection{Review Bayesian Linear Regression}
 
-Given a dataset $D = \{(\vect x_i, y_i)\}_{i=1}^n$, one wishes to make prediction on new samples $\vect x^\star$ that were not in the dataset. This is accomplished by considering the \emph{posterior} distribution $f^\star (\vect x^\star) \mid D$, i.e. the distribution of the prediction conditioned on input-output observations. This is the typical Bayesian view of linear regression,
+Given a training dataset $\mathcal D = \{(\vect x_i, y_i)\}_{i=1}^n$ and assuming there is an unknown function $f$ following the measurement model with Gaussian noise
 
 \begin{equation} \label{eq:measurement_model}
-    y = f(\vect x) + \epsilon, \quad f(\vect x) = \vect w^\top \vect x,
+    y_i = f(\vect x_i) + \epsilon_i, \quad \epsilon_i \sim \mathcal N(0, \sigma^2) \; ,
+\end{equation}
+\textcolor{red}{you have indenting everywhere after equations. Please remove them.}
+%
+one wishes to predict $f(\vect x^\star)$ for samples $\vect x^\star$ that were not in the training set. We focus on the Bayesian linear regression with a Gaussian prior for the weights, i.e. $f(\vect x) = \vect w^\top \vect x$, $\vect w \sim \mathcal N(\vect 0, \Sigma_0)$. One performs predictions by considering the posterior distribution $f (\vect x^\star) \mid \mathcal D$, whose density is expressed in terms of the likelihood $p(\vect y \mid X, \vect w)$ and the prior $ p(\vect w)$.
+
+This model can be extended by introducing basis functions $\vect \phi : \R^d \to \R^D$ (independent of $\vect w$), where typically $D \gg d$. One projects the features $\vect x$ onto the feature space $\vect\phi(\R^d)$, so that the new model is $f(\vect x) = \vect w^\top \vect \phi(\vect x)$, which remains linear in the feature space. It turns out one can express the posterior distribution solely in terms of inner products of the form
+
+\begin{equation} \label{eq:kernel_trick}
+    \vect\phi(\vect x)^\top \Sigma_0 \vect\phi(\vect x') \;,
 \end{equation}
 
-where we impose a prior distribution $\vect w \sim \mathcal N(\vect 0, \Sigma_0)$ on the weights of the model (interpreted as a regularization constraint in the non-Bayesian approach) and the noise $\epsilon$ is assumed to be iid Gaussian. This linear model can be extended with feature expansion, i.e. given some basis function $\phi: \R^d \to \R^D$, we project the samples in the feature space $\phi(\R^d)$ so that the new model is simply
+this is often referred to the \emph{kernel trick} (see \cite{rasmussen_gaussian_2005} section 2.1.2 for the full derivation). This reformulation is especially useful when the inner products have an analytical expression which do not explicitly requires projecting features and computing the dot products. 
+
+\textcolor{red}{This section is a bit unclear. You start saying that you focus on linear regression with linear basis functions, but then you go into non-linear basis functions. I don't see the purpose of this section either, because you focus on GP regression in your project, not linear regression. }
+
+
+\subsection{The Function-space View}
+
+In the Bayesian linear regression (with or without feature expansion), one models a distribution on the weights $\vect w$. Hence, this viewpoint is often referred to the \emph{weight-space} view. Gaussian processes provide an alternative and equivalent view on Bayesian linear regression with feature expansion by modeling \textcolor{red}{You never define what a Gaussian process is. You must state what defines a Gaussian process and include a citation. }
 
 \begin{equation*}
-    f(\vect x) = \vect w^\top \phi(\vect x) \; .
+    f \sim \mathcal{GP}(\mu(\vect x), k(\vect x, \vect x')) \;,
 \end{equation*}
 
-Although the basis function is typically non linear, note that the model is still linear in the \emph{feature space}. This effectively allows to increase flexibility and model a much richer class of functions, since we typically project in a high-dimensional feature space (i.e., $D \gg d$). It turns out that the posterior distribution can be expressed solely in terms of inner products 
+with the mean function $\mu$ and covariance function $k$. For $f(\vect x) = \vect w^\top \vect x$ with Gaussian prior $\vect w \sim \mathcal N(\vect 0, \Sigma_0)$, we retrieve the inner product \eqref{eq:kernel_trick} for the covariance,
 
-\begin{equation} \label{eq:feature_space_dotprod}
-    \phi(\vect x)^\top \Sigma_0 \phi(\vect x')
-\end{equation}
+\begin{align*}
+    \mu(\vect x) &:= \E [f(\vect x)] = \vect\phi(\vect x)^\top \E[\vect w] = 0\\
+    k(\vect x, \vect x') &:= \E[f(\vect x)f(\vect x')] = \vect\phi(\vect x)^\top \E[\vect w \vect w^\top] \vect\phi(\vect x') = \vect\phi(\vect x)^\top \Sigma_0 \vect\phi(\vect x) \;.
+\end{align*}
 
-with respect to the prior covariance matrix \textcolor{red}{cite why}. In practice, we use a combination of $\Sigma_0$ and $\phi$ that lead to an analytical expression of \eqref{eq:feature_space_dotprod} which doesn't require the explicit dot product computation. This is the so-called \emph{kernel trick}, and conveniently allows to even perform implicit computations in an infinite-dimensional feature space \textcolor{red}{cite why}. 
-
-
-\subsection{Function-space view}
-
-However, the Gaussian Process regression framework provides an alternative (but equivalent) view to the Bayesian linear regression with feature expansion. Rather than modeling a probability distribution on the weights $\vect w$, we model a distribution over the functions $f^\star$ themselves. This distribution is induced by specifying the covariance function $k$ of the Gaussian Process, which is also called the kernel function. In consequence, the choice of the kernel function imposes a prior on the functions we want to consider. For instance, one typically wants to control the function smoothness by the choice of the kernel and its hyperparameters in order to control the bias-variance tradeoff. This function-space viewpoint is the one we will consider in this project. The interested reader is referred to \cite{rasmussen_gaussian_2005} for an outstanding discussion of GPs in the context of machinel learning. 
-
-Let us briefly introduce the notation and the different quantities involved in GPR. Let $X = \begin{bmatrix} \vect x_1 & \dots & \vect x_n \end{bmatrix} \in \R^{d \times n}$ be the matrix collecting the $n$ training features and $\vect y \in \R^n$ the vector collecting the $n$ training targets. We define the $\R^{n\times n}$ kernel matrix
+Hence, $k$ is often called the \emph{kernel function} in the GP literature.
+In fact, in GP inference one rather specifies the kernel function and considers the underlying feature space of little interest. To see how the choice of $k$ induces a distribution over functions
+\footnote{Formally, one should refer to distributions over function \emph{values} evaluated at any finite number of points.}, 
+we first define the matrix $X = (\vect x_1, \ldots, \vect x_n) \in \R^{d \times n}$ collecting the training features and define the $n\times n$ kernel matrix
 
 \begin{equation*}
-    K_{XX} = k(X, X)
+    (K_{XX})_{ij} = (k(X, X))_{ij} = k(\vect x_i, \vect x_j), \quad 1 \le i, j \le n \; .
 \end{equation*}
 
-where $k(X, X)$ is a shorthand for evaluation of the kernel for each of the columns, i.e. $k(X, X)_{ij} = k(\vect x_i, \vect x_j)$. Given a test sample $\vect x^\star$, we define the following quantities in a similar way: $\vect k_{X \vect x^\star} = k(X, \vect x^\star), \, k_{\vect x^\star} = k(\vect x^\star, \vect x^\star)$. The hat symbol denotes addition of the identity scaled by the noise covariance, e.g. $\widehat K_{XX} = K_{XX} + \sigma^2 \Id$. In order to derive the posterior distribution, it is useful to first consider the \emph{joint} distribution of the noiseless prediction $y^\star = f(\vect x^\star)$ with the training data, which is Gaussian by definition of Gaussian Processes:
+Similarly for a test sample $\vect x^\star$, we define $\vect k_{X, \vect x ^\star} = k(X, \vect x^\star)$, $k_{\vect x ^\star} = k(\vect x ^\star, \vect x ^\star)$. A hat symbol denotes addition of the identity matrix scaled by the noise variance, e.g. $\widehat K_{XX} = K_{XX} + \sigma^2 \Id$. By definition of Gaussian processes, the joint distribution of the prediction $y^\star = f(\vect x^\star)$ with the training observations is also Gaussian,
 
-% ---------------------------------------------------
-% Joint distribution of prediction with training labels
-%\begin{comment}
 \begin{equation*}
     \begin{bmatrix} y^\star \\ \vect y \end{bmatrix}
     \sim \mathcal N \left( \vect 0, \begin{bmatrix}
@@ -148,22 +116,20 @@ where $k(X, X)$ is a shorthand for evaluation of the kernel for each of the colu
         \vect k_{X \vect x^\star} & \widehat K_{XX}
     \end{bmatrix} \right) \; .
 \end{equation*}
-%\end{comment}
-% ---------------------------------------------------
 
-The posterior distribution is obtained by conditioning $y^\star$ on the training data. The resulting distribution is also Gaussian and has a well known expression (see e.g. theorem 3.3.4 of \cite{tong_multivariate_1990}):
+After conditioning on training data, the distribution remains Gaussian and has a well known expression (see e.g. theorem 3.3.4 of \cite{tong_multivariate_1990}):
 
 \begin{equation} \label{eq:predictive_distrib}
-    y^\star \mid X, \vect y \sim \mathcal N(\mu, \Sigma) \, , \quad 
+    y^\star \mid \vect x^\star, X, \vect y \sim \mathcal N(\mu, \Sigma) \, , \quad 
     \begin{aligned}
         \mu &= \vect k_{X \vect x^\star}^\top \widehat K_{XX}^{-1} \vect y \\
         \Sigma &= k_{\vect x^\star} - \vect k_{X \vect x^\star}^\top \widehat K_{XX}^{-1} \vect k_{X \vect x^\star}
     \end{aligned} \; .
 \end{equation}
 
-%Note that the predictive mean is simply a weighted sum of the training targets, whereas the predictive variance only depends on the inputs. 
-Without any training data, we have $\Sigma = k_{\vect x^\star}$ being the prior variance. By adding data we subtract the positive quadratic term, decreasing the uncertainty of the prediction. %Note however that the posterior variance only depends on the input, whereas the posterior mean is a linear combinations of the training targets. A perhaps more insightful expression of the posterior mean is
-In order to interpret the posterior mean, we rewrite 
+This is often called the \emph{predictive} distribution, and shows the importance of the kernel function in modeling the unknown function $f$. 
+As a brief interpretation of \eqref{eq:predictive_distrib}, notice that without any training data we have $\Sigma = k_{\vect x^\star}$ being the prior variance. By adding data we subtract the positive quadratic term, decreasing the uncertainty of the prediction. %Note however that the posterior variance only depends on the input, whereas the posterior mean is a linear combinations of the training targets. A perhaps more insightful expression of the posterior mean is
+The predictive mean can be written
 
 \begin{equation*}
     \mu = \sum_{i=1}^n \alpha_i y_i = \sum_{i=1}^n \beta_i k(\vect x_i, \vect x^\star) \;,
@@ -171,24 +137,28 @@ In order to interpret the posterior mean, we rewrite
 
 with $\vect \alpha := \widehat K_{XX}^{-1} \vect k_{X\vect x^\star}$, $\vect \beta := \widehat K_{XX}^{-1} \vect y$. This provides two equivalent views for the prediction mean, either as a weighted sum of the training targets $y_i$, or a weighted sum of kernel functions.
 
+\textcolor{red}{This section should be clarified. First define what a Gaussian process is. Then explain what the posterior distribution is. Then explain what we want: find the hyperparameters. How: Maximum likelihood estimation on the posterior distribution. Explain how this leads to trace estimation and log determinant estimation.
 
 \subsection{Hyperparameter Estimation}
 
-The discussion has omitted an important note so far. 
-Although GPR models are non-parametric under the function-space view, some parameters remain unknown, e.g. the noise variance and kernel lengthscale. Those are usually called hyper-parameters, and we collect all such variables in the vector $\vect\theta$. For notation simplicity, we will keep the kernel dependence on hyperparameters implicit, i.e. $\widehat K_{XX} := \widehat K_{XX}(\vect\theta)$. 
+%The discussion has omitted an important note so far. 
+Although GPR models are non-parametric under the function-space view, some quantities remain unknown, e.g. the noise variance and kernel lengthscale. Those are usually called hyper-parameters, and we collect all such variables in the vector $\vect\theta$. For notation simplicity, we will keep the kernel dependence on hyperparameters implicit, i.e. $\widehat K_{XX} := \widehat K_{XX}(\vect\theta)$. 
 As $\vect \theta$ is unknown, the inference engine needs to estimate them from the data. This is usually addressed by maximum likelihood estimation by means of an optimization algorithm. The likelihood in this case would be $p(\vect f \mid X, \vect \theta)$, with $\vect f = (f(\vect x_1), \ldots, f(\vect x_n))$ the function values. However, the true function values are unknown (and so is the likelihood) as we only have access to the noisy evaluations $\vect y$. Instead, we consider the \emph{marginal} likelihood
 
 \begin{equation*}
     p( \vect y \mid X, \vect \theta) = \int p( \vect y \mid X, \vect \theta, \vect f) p(\vect f \mid X, \vect \theta) d \vect f \; ,
 \end{equation*}
 
-where marginalization occurs over the latent function values. This kind of integral occuring in Bayesian statistics has in general no closed form solution and are quite hard to approximate. However, in the GPR setting with Gaussian noise, the resulting expression is excessively simple and can actually be guessed by inspecting Equation~\ref{eq:measurement_model}: this is the sum of two independent Gaussians, so the resulting distribution is 
+where marginalization occurs over the latent function values. 
+%This kind of integral occuring in Bayesian statistics has in general no closed form solution and are quite hard to approximate. However, 
+In the Gaussian noise case, the resulting expression is simple and can be guessed by inspecting Equation~\eqref{eq:measurement_model}: this is the sum of two independent Gaussian variables, so the resulting distribution is
 
 \begin{equation*}
     \mathcal N(\vect 0, \Var[\vect f] + \Var[\vect \epsilon]) = \mathcal N(0, K_{XX} + \sigma^2 \Id ) = \mathcal N(\vect 0, \widehat K_{XX}) \; .
 \end{equation*}
 
-As mentionned above, we wish to perform optimization on this probability density function to fit the parameters $\vect \theta$. Let us note $\mathcal L(\theta \mid X, \vect y)$ the \emph{marginal log likelihood}, we give its expression as well as its derivative (see appendix \ref{sec:marginal_log_likelihood_gradient} for the derivation) so that gradient-based optimization can be performed,
+%As mentionned above, we wish to perform optimization on this probability density function to fit the parameters $\vect \theta$. 
+Let us note $\mathcal L(\theta \mid X, \vect y)$ the \emph{marginal log likelihood}, which together with its derivative (see appendix \ref{sec:marginal_log_likelihood_gradient} for the derivation) reads
 
 \begin{align}
     \mathcal L(\vect\theta \mid X, \vect y) 
@@ -204,10 +174,33 @@ As mentionned above, we wish to perform optimization on this probability density
 
 %Let $X = \begin{bmatrix} \vect x_1 & \dots & \vect x_n \end{bmatrix}^\top \in \R^{n \times D}$ collect the $n$ training observations with $d$-dimensional features, i.e. each data point $\vect x_i$ is a row of the matrix $X$. Let $\vect y \in \R^n$ collect the training targets with row-wise correspondence with respect to $X$. Gaussian Process Regression (GPR) involves ...
 
+\textcolor{red}{You don't explain what we want to do with these quantities once we have them. Why is the marginal likelihood important? In the introduction you need to explain how you arrive at the problem you are trying to solve. }
 
+\textcolor{red}{Summary of first section: The first section of the introduction is good. However, later it becomes very difficult to understand what the point of the project is. Fortunately, there is an easy fix to this since your project has a very natural story. This should be more or less the outline. i) Explain that in some applications you want to predict $f(x)$ for $x$ not in the data set. ii) Explain Gaussian processes and how we model $f$ as a Gaussian process. iii) We observe noisy data, explain the posterior distribution. iv) We want to find hyperparameters by maximum likelihood estimation. v) Arrive at trace and log-det estimation and state that we are going to focus on this.}
+
+\textcolor{red}{Suggestion for outline: \begin{itemize}
+    \item Section 2: Trace estimation
+    \begin{itemize}
+        \item Trace estimation ($\rightarrow$ How to compute quadratic forms???)
+        \item Solving linear systems via CG (show CG algorithm)
+        \item Computing quadratic forms via Lanczos (Show Lanczos algorithm)($\rightarrow$ We can reuse computations from CG)
+        \item CG to Lanczos
+    \end{itemize}
+    \item Section 3: Preconditioning
+    \begin{itemize}
+        \item Why is preconditioning important
+        \item Partial Cholesky
+        \item How to incorporate it into the method above
+        \item Show your theoretical results on the condition number etc
+    \end{itemize}
+    \item Numerical experiments
+    \item Conclusion
+\end{itemize}
+}
 
 \begin{comment}
 \subsection{Training a Gaussian Process for Regression}
+
 
 In order to evaluate the model $\hat f$ on test samples $\vect x^\star$, one can use the predictive mean \eqref{eq:pred_mean}. A measure of the confidence of the prediction is provided by the predictive covariance \eqref{eq:pred_var}. \emph{todo rephrase this under bayesian approach rather than frequentist}
 
@@ -220,26 +213,27 @@ A number of methods have been proposed to compute those three terms. \textbf{tod
 
 
 
-\section{Training a Gaussian Process for Regression}
+\section{Training a Gaussian Process for Regression} \label{sec:training}
 
-Training a Gaussian Process requires to compute predictive mean and variance (Equation \eqref{eq:predictive_distrib}), the marginal log-likelihood $\mathcal L(\vect \theta \mid X, \vect y)$ (Equation \eqref{eq:marginal_log_likelihood}) and its gradient (Equation \eqref{eq:marginal_log_likelihood_gradient}). The computational complexity of those quantities is dominated by the solves $\widehat K_{XX}^{-1} \vect y$, the log-determinant of $\hat K_{XX}$ and the trace term $\trace ( \widehat K_{XX}^{-1} \frac{d \widehat K_{XX}}{d\theta} )$. 
+Training a GP for regression refers to estimating the unknown hyperparameters. This requires evaluation of the marginal log-likelihood and its gradient (Equations \eqref{eq:marginal_log_likelihood}, \eqref{eq:marginal_log_likelihood_gradient}). The terms that dominate the computational complexity are the linear solve $\widehat K_{XX}^{-1} \vect y$, the log determinant of $\hat K_{XX}$ and the trace term $\trace ( \widehat K_{XX}^{-1} \frac{d \widehat K_{XX}}{d\theta} )$. Those may be computed exactly in $\mathcal O(n^3)$ time with e.g. Cholesky decomposition $\widehat K_{XX} = LL^\top$, and hence is applicable only to small datasets. 
 
-Many inference engines \cite{} rely on Choelsky decomposition to calculate the above quantities. However, Cholesky decomposition is performed in $\mathcal O(n^3)$. GPyTorch \cite{gardner_gpytorch_2021} proposes a framework build on top of PyTorch to jointly compute the above quantities in sub-cubic time by combining iterative methods, hence requiring access to $\widehat K_{XX}$ and $\frac{d \widehat K_{XX}}{d\theta}$ only through matrix-matrix multiplication oracles. 
+GPyTorch \cite{gardner_gpytorch_2021} is a framework build on top of PyTorch to jointly compute the above quantities in sub-cubic time. 
+It relies on combining stochastic trace estimation, conjugate gradients and Lanczos tridigonalization, hence requiring access to $\widehat K_{XX}$ and $\frac{d \widehat K_{XX}}{d\theta}$ only through matrix-matrix multiplication oracles. 
 
-In section \ref{sec:gpytorch} we describe an overview of the GPyTorch framework, then we present the basis of stochastic trace estimation in section \ref{sec:stoch_trace_estimation}, Lanczos quadrature in section \ref{sec:lanczos_quadrature} and the connection between Lanczos and conjugate gradient in section \ref{sec:lanczos_from_cg}.
+In section \ref{sec:gpytorch} we describe an overview of the GPyTorch framework, then we present the basis of stochastic trace estimation in section \ref{sec:stoch_trace_estimation}, Lanczos quadrature in section \ref{sec:lanczos_quadrature} and the connection between Lanczos and conjugate gradient in section \ref{sec:lanczos_from_cg}. \textcolor{red}{Above is a good start. I just really don't agree with how you structure the second section of the report. You will see comments below and at the end of Section 2 I provide a summary and a suggestion on how to fix the issues. }
 
-\subsection{GPyTorch inference engine} \label{sec:gpytorch}
-
-They propose a modified batched version of  (preconditionned) conjugate gradient algorithm (mBCG), which approximates the solution of the matrix equation
+\subsection{GPyTorch Inference Engine} \label{sec:gpytorch}
+\textcolor{red}{It does not make sense to start with GPYtorch. You haven't talked anything about Lanczos, and all of a sudden you start talking about Lanczos tridiagonalizations. You should "comfortably" lead the reader into more complexity, not start with something really complicated. }
+The core of GPyTorch inference engine is based on a modified batched version of (preconditionned) conjugate gradient algorithm (mBCG), which approximates the solution of the matrix equation
 
 \begin{equation} \label{eq:mbcg_equation}
     \widehat K_{XX} \begin{bmatrix} \vect u_0 & \vect u_1 & \dots & \vect u_N \end{bmatrix} = 
     \begin{bmatrix} \vect y & \vect z_1 & \dots & \vect z_N \end{bmatrix} \; ,
 \end{equation}
 
-with $\vect z_i \stackrel{\text{iid}}{\sim} \mathcal N(\vect 0, \Id[n])$, and additionally returns partial Lanczos tridiagonalizations $T_m^{(1)}, \ldots, T_m^{(N)}$ of $\widehat K_{XX}$ with starting vectors $\vect z_1, \ldots, \vect z_N$ and $m$ the number of Lanczos steps. The algorithm is stated in Algorithm \ref{}, and only needs access to $\widehat K_{XX}$ and $d\widehat K_{XX}/d\theta$ through blackbox matrix-matrix multiplication oracles. 
+with $\vect z_i \stackrel{\text{iid}}{\sim} \mathcal N(\vect 0, \Id[n])$, and additionally returns partial Lanczos tridiagonalizations $T_m^{(1)}, \ldots, T_m^{(N)}$ of $\widehat K_{XX}$ with starting vectors $\vect z_1, \ldots, \vect z_N$ and $m$ the number of Lanczos steps. Preconditioning will be addressed separately in section \ref{sec:precond}. The mBCG algorithm is stated in Algorithm~\ref{algo:mBCG}.%, and only needs access to $\widehat K_{XX}$ and $d\widehat K_{XX}/d\theta$ through blackbox matrix-matrix multiplication oracles. 
 
-The approximates of $\vect u_i$ are computed with conjugate gradient. Batched refers to handling multiple right hand sides at once, as an attempt to leverage the computational speedup of matrix-matrix multiplications when performed on a GPU rather than a CPU. The modified component of CG stands for the extra computation of tridigonal matrices.
+The approximates of $\vect u_i$ are computed with conjugate gradient. Batched refers to handling multiple right hand sides at once, as an attempt to leverage the computational speedup of matrix-matrix multiplications when performed on a GPU rather than a CPU. The modified component of CG stands for the extra computation of tridiagonal matrices.
 
 Let us now discuss how mBCG allows to train a Gaussian process, presenting the general ideas and leaving the details for the following sections. The approximate of $\widehat K_{XX}^{-1} \vect y$ is readily available from the output $\vect u_0$. The trace term is approximated with stochastic trace estimation:
 
@@ -255,120 +249,67 @@ with $\vect z_i$ the input of the mBCG algorithm, and $\vect u_i = \widehat K_{X
     \log\det A = \trace\log A \; ,
 \end{equation}
 
-for an SPD matrix $A$ with $\log(\cdot)$ the matrix logarithm. %\textcolor{red}{you should probably explain what the matrix-log is}. 
+for an SPD matrix $A$ with $\log(A)$ the matrix logarithm\footnote{The matrix logarithm is a matrix function, which for diagonalizable matrices $A = X\Lambda X^{-1}$ is defined as $f(A) = X\text{diag}(f(\lambda_1), \ldots, f(\lambda_n)) X^{-1}$ when $f$ is analytic in the spectrum of $A$. See chapter~9 of \cite{golub_matrix_2013} for details.}. %\textcolor{red}{you should probably explain what the matrix-log is}. 
 The right-hand side of \eqref{eq:logdet_tracelog} is estimated with the stochastic Lanczos quadrature. That is, we combine a stochastic trace estimator with the Lanczos quadrature to approximate quadratic forms. Assume first we run $m = n$ Lanczos steps with starting vector $\vect z$, we obtain the exact tridiagonalization $\widehat K_{XX} = Q T Q^\top$ and rewrite 
 
 \begin{equation} \label{eq:quadratic_form}
     \vect z^\top (\log \widehat K_{XX}) \vect z = \vect z^\top Q (\log T) Q^\top \vect z = \norm{\vect z}_2^2 \, \vect e_1^\top (\log T) \vect e_1 \; ,
 \end{equation}
 
-where the right-hand side of \eqref{eq:quadratic_form} only involves the matrix $T$. As discussed in section \ref{sec:lanczos_from_cg}, the tridiagonal matrix can be obtained in constant time per Lanczos step. Under suitable preconditioning, a good approximation of the quadratic form can be obtained in $m \ll n$ steps from the matrix $T_m = Q^\top \widehat K_{XX} Q \in \R^{m\times m}$. The logdet estimator is thus
+where the right-hand side of \eqref{eq:quadratic_form} only involves the matrix $T$. As discussed in section \ref{sec:lanczos_from_cg}, the tridiagonal matrix can be obtained in constant time per CG step. Under suitable preconditioning, a good approximation of the quadratic form can be obtained in $m \ll n$ steps from the matrix $T_m = Q^\top \widehat K_{XX} Q \in \R^{m\times m}$. The logdet estimator eventually reads
 
-\begin{equation*}
-    \Gamma_{N, m} = \frac{1}{N} \sum_{i=1}^N \norm{\vect z_i}_2^2 \, \vect e_1^\top \log \left(T_m^{(i)} \right) \vect e_1 \approx \E_{\mathcal N(\vect 0, \Id)} \left[ \norm{\vect z}_2^2 \, \vect e_1^\top (\log T) \vect e_1 \right] = \log \det \widehat K_{XX} \; ,
-\end{equation*}
+\begin{equation} \label{eq:logdet_estimator}
+    \Gamma_{N, m} := \frac{1}{N} \sum_{i=1}^N \norm{\vect z_i}_2^2 \, \vect e_1^\top \log \left(T_m^{(i)} \right) \vect e_1 \approx \E_{\mathcal N(\vect 0, \Id)} \left[ \norm{\vect z}_2^2 \, \vect e_1^\top (\log T) \vect e_1 \right] = \log \det \widehat K_{XX} \; ,
+\end{equation}
 
 with $\vect z_i$ the mBCG input and $T_m^{(i)}$ the mBCG output.
 
-\begin{comment}
-, which is essentially a Monte Carlo estimator of the following expectation
-
-\begin{equation} \label{eq:stoch_trace}
-    \E_{\mathcal N(\vect 0, \Id)} \left[ \vect z^\top (\log \widehat K_{XX} ) \vect z \right] = \trace(\log \widehat K_{XX}) \; ,
-\end{equation}
-
-combined with a (deterministic) estimator of the quadratic forms arising in \eqref{eq:stoch_trace}, based on the Lanczos algorithm. If we ran $n$ steps of Lanczos with a starting vector $\vect z$, we would obtain the tridiagonalization $\widehat K_{XX} = Q T Q^\top$, and the quadratic forms could be computed exactly,
-
-\begin{equation} \label{eq:quadratic_form}
-    \vect z^\top (\log \widehat K_{XX}) \vect z = \vect z^\top Q (\log T) Q^\top \vect z = \norm{\vect z}_2^2 \, \vect e_1^\top (\log T) \vect e_1 \; .
-\end{equation}
-
-However, under some suitable preconditionning (see section \ref{sec:precond}), a good approximation of the quadratic form can be obtained with $m \ll n$ Lanczos steps. Moreover, only the tridiagonal matrix $T$ is required in \eqref{eq:quadratic_form}, and it turns out that the tridiagonal matrix $T_m = Q_m^\top \widehat K_{XX} Q_m$ can be obtained in $\mathcal O(1)$ extra time per step of conjugate gradients. This is the modified component of the mBCG algorithm: for each of the $\vect z_i$ probe vectors, the algorithm also returns the $m\times m$ tridiagonal matrices $T_i$ corresponding to $m$ steps of Lanczos with starting vector $\vect z_i$. 
-\end{comment}
-
-%\textcolor{red}{How do you compute matvecs with the derivative?}. 
-
-%Assume first that we have the decomposition $\widehat K_{XX} = Q T Q^\top$, with $Q$ orthogonal and $T$ tri-diagonal. We can re-express the log-determinant in some more convenient form,
-
-
-%We could obtain the tri-diagonal decomposition using e.g. Lanczos tridigonalization algorithm. However, \textbf{blabla numerical instabilities?}, and we want to re-use the computations performed for the other quantities. blablabla
-
-%Mention analycity of $f=log$ for SPD matrix in $[\lambda_{\min}, \lambda_{\max}]$.
-
 \subsection{Stochastic Trace Estimation} \label{sec:stoch_trace_estimation}
-
-In this section we review the basics of how to efficiently compute an approximation of the trace of a matrix $A \in \R^{n\times n}$ using only an MVM oracle $\vect x \mapsto A\vect x$. Of course, one can naively compute the exact quantity by using $n$ calls to the oracle to compute quadratic forms with canonical basis elements:
+\textcolor{red}{It is unclear why you don't focus on trace estimation first. This is a much simpler problem and leads to an obvoius question: How to we compute quadratic forms? Then explain Lanczos. Then explain Lanczos from CG. Then explain GPYtorch.}
+In this section we review the basics of approximating the trace of a matrix $A \in \R^{n\times n}$ using only an MVM oracle $\vect x \mapsto A\vect x$. The simplest approach is to use $n$ calls to the oracle,
 
 \begin{equation*}
     \sum_{i=1}^n \vect e_i^\top (A \vect e_i) = \sum_{i=1}^n a_{ii} =: \trace(A) \; ,
 \end{equation*}
 
-%Alternatively, one could compute the Cholesky decomposition $A = LL^\top$
-%Analogously, another approach would be to compute the Cholesky decomposition $A = LL^\top$ in $\mathcal O(n^3)$ time, then the log determinant is easy to compute CHECK IF CAN BE DONE WITH MVM oracle only:
-%\begin{equation*}
-%    \log \det A = \trace \log(LL^\top) = 2 \trace \log(L) = 2 \sum_i \log l_{ii}
-%\end{equation*}
-
-and this requires $\Theta(n^3)$ time. As this becomes quickly computationally prohibitive for large $n$, we will trade exactness for speed by using a stochastic estimator of $\trace(A)$ computed in sub-cubic time. In particular, a simple estimator is the random variable $\vect Z^\top A \vect Z$ with a probe vector $\vect Z \sim \mathcal D$, which is \emph{unbiased} if the first and second order statistics of the distribution are $\E_\mathcal{D}[\vect Z] = \vect 0, \, \Var_\mathcal{D}[\vect Z] = \Id$, as
-
+with $\vect e_i$ the canonical basis elements. As this requires $\Theta(n^3)$ time, we will trade exactness for speed with stochastic trace estimation \cite{cortinovis_randomized_2021, ubaru_fast_2017}. 
+In particular, the estimator $\vect z^\top A \vect z$ with a random probe vector $\vect z \sim \mathcal D$ is unbiased if $\E_\mathcal{D}[\vect z] = \vect 0, \, \Var_\mathcal{D}[\vect z] = \Id$.
+%by using a stochastic estimator of $\trace(A)$ computed in sub-cubic time. 
+%In particular, a simple estimator is the random variable $\vect Z^\top A \vect Z$ with a probe vector $\vect Z \sim \mathcal D$, which is \emph{unbiased} if the first and second order statistics of the distribution are $\E_\mathcal{D}[\vect Z] = \vect 0, \, \Var_\mathcal{D}[\vect Z] = \Id$, as
+\begin{comment}
 \begin{equation*}
     \E[\vect Z^\top A \vect Z] = \sum_{i,j=1}^n a_{ij} \E[Z_i Z_j] = \sum_{i,j=1}^n a_{ij} I_{\{i=j\}} = \sum_{i=1}^n a_{ii} =: \trace(A) \; ,
 \end{equation*}
-\makeatletter
-% Reinsert missing \algbackskip
-\def\algbackskip{\hskip-\ALG@thistlm}
-\makeatother
-which takes $\mathcal O(n^2N)$ time provided that sampling from $\mathcal D$ is not the bottleneck. The accuracy of this estimator can be controlled by choosing a number $N$ of probe vectors $\vect Z_i$ and averaging the result. Let us denote by $\trace_N^{\mathcal D}(A)$ such a Monte Carlo estimator for the trace of $A$:
+\end{comment}
+%
+From this, we build the Monte Carlo estimator 
 
 \begin{equation*}
-    \trace_N^{\mathcal D}(A) := \frac{1}{N} \sum_{i=1}^N \vect Z_i^\top A \vect Z_i, \quad \vect Z_i \stackrel{\text{iid}}{\sim} \mathcal D \;.
+    \trace_N^{\mathcal D}(A) := \frac{1}{N} \sum_{i=1}^N \vect z_i^\top A \vect z_i, \quad \vect z_i \stackrel{\text{iid}}{\sim} \mathcal D \;,
 \end{equation*}
 
-We will focus our discussion for $\mathcal D$ being the standard normal distribution with the estimator denoted by $\trace_N^G$, and we show its variance in the following proposition.
+having $\mathcal O(n^2N)$ time complexity, provided that sampling from $\mathcal D$ is not the bottleneck. We will focus our discussion for $\mathcal D$ being the standard normal distribution with the estimator denoted by $\trace_N^G$, and we show its variance in the following proposition.
 
 
 \begin{proposition} \label{prop:trace_estim_variance}
-Let $A \in \R^{n \times n}$ be a symmetric matrix, then the estimator $\vect X^\top A \vect X, \, \vect X\sim \mathcal N(\vect 0, \Id)$ has variance $2 \Vert A \Vert_\text{F}^2$.
+Let $A \in \R^{n \times n}$ be a symmetric matrix, then the estimator $\vect z^\top A \vect z, \, \vect z\sim \mathcal N(\vect 0, \Id)$ has variance $2 \Vert A \Vert_\text{F}^2$.
 \end{proposition}
-\begin{proof} \textcolor{red}{the proof can be made much simpler than this}
-Let $A = Q \Lambda Q^\top$ be the spectral decomposition of $A$, denote $\vect q_i$ the columns of $Q$. The quadratic form can be written as 
-\begin{equation*}
-    \vect X^\top A \vect X = \sum_i \lambda_i (\vect X^\top \vect q_i)^2 = \sum_i \lambda_i Y_i^2, \quad Y_i := \vect X^\top \vect q_i \; ,
-\end{equation*}
-where $Y_1, \ldots, Y_n \stackrel{\text{iid}}{\sim} \mathcal N(0, 1)$. Recalling the 4th moment of the standard normal distribution is $\E[X^4] = 3$, we have that
+\begin{proof} 
+Let $A = Q \Lambda Q^\top$ be the spectral decomposition of $A$, with $\vect q_i$ the columns of $Q$. The quadratic form is written as $\vect z^\top A \vect z = \sum_{i=1}^n \lambda_i y_i^2$ with $y_i := \vect z^\top \vect q_i \sim \mathcal N(0, 1)$ independent. Recalling the fourth moment of the standard normal distribution $\E[y_i^4] = 3$, it follows
 
 \begin{equation*}
-    \E[(\vect X^\top A \vect X)^2] = \sum_{ij} \lambda_i\lambda_j \E[Y_i^2 Y_j^2] 
-    = \sum_i ( 3\lambda_i^2 + \lambda_i \sum_{j\neq i} \lambda_j ) 
-    = 2\sum_i \lambda_i^2 + \sum_{ij} \lambda_i\lambda_j
-    = 2\norm{A}_F^2 + \trace(A)^2 \; .
+    \Var[\vect z^\top A \vect z] = \E\left[ \left( \textstyle\sum_i \lambda_i(y_i^2 - 1) \right)^2 \right] = \sum_i \lambda_i^2 \E[y_i^4 - 2y_i^2 + 1] = 2\sum_i \lambda_i^2 = 2 \norm{A}_F^2 \; .
 \end{equation*}
-
-Since the estimator is unbiased, $\Var[\vect X^\top A \vect X] = \E[(\vect X^\top A \vect X)^2] - \trace(A)^2 = 2\norm{A}_F^2$.
-
-\begin{comment}
-, and since the estimator is unbiased,
-\begin{align*}
-    \Var[\vect X^\top A \vect X] &= \E[(\vect X^\top A \vect X - \trace(A))^2] = \E[(\textstyle \sum_i \lambda_i (Y_i^2 - 1))^2] \\
-    &= \sum_{ij} \lambda_i \lambda_j \E[(Y_i^2-1)(Y_j^2-1)] \\
-    &= \sum_{i} \lambda_i (3\lambda_i 
-    &= \sum_i ( \lambda_i^2 \E[Y_i^4] + \lambda _i \sum_{j\neq i} \lambda_j ( 1 - \E[Y_i] - \E[Y_j] ) )\\
-    &=  \sum_i \lambda_i( 3 \lambda_i - \sum_{j\neq i} \lambda _j ) \\
-    &= 
-\end{align*}
-\end{comment}
+\textcolor{red}{Proof becomes much shorter by using the fact that "variance of sum is sum of variances" if the random variables are independent. The variance of chi-1-square random variables is well-known to be 2. }
 \end{proof}
 
-\begin{remark}
-TODO rewrite this. The variance of the Monte Carlo estimator is easily derived, since we use independent probe vectors, it follows that $\Var[\trace_N^G(A)] = 2 \norm{A}_F^2/ N$. 
-This means we can apply the Central Limit theorem in order to get probabilistic asymptotic bounds for the error of the estimator with $N \to \infty$ probe vectors. However, we don't want asymptotic bounds. ........
-\end{remark}
+Hence the variance of the Monte Carlo estimator is $2\norm{A}_F^2 / N$. Using the central limit theorem, one could get probabilistic asymptotic bounds for the error. However, the asymptotic regime is of little interest here, one rather wish to characterize the number of probe vectors $N$ required to reach some fixed error with some fixed probability. This convergence analysis is addressed in section \ref{sec:convergence_logdet} for the trace log. 
+\textcolor{red}{You should improve this section. You can remove the first part on computing $n$ matrix-vector products with canonical vectors. Start with saying that often explicitly forming $A$, or even the diagonal elements, require $O(n^3)$ operations, which is too expensive. Then say that you can estimate the trace using monte carlo estimation. Then define the stochastic trace estimator, compute its variance and include the tailbound by Alice and Daniel. Then end the section with the cliffhanger: How do we compute quadratic forms???? Then go on to using Lanczos quadrature in the next section. This will be a smooth transition.}
 
 
 \subsection{Lanczos for Approximations of Quadratic Forms} \label{sec:lanczos_quadrature}
 
-
-The quadratic forms $\vect x^\top f(A) \vect x$ arising from the stochastic trace approximation are expensive to compute and thus need to be approximated. We will explore the Lanczos quadrature. The first step is to express the quadratic form as a Riemann-Stieljes integral with respect to an unknown measure $\alpha$. Given a symmetric matrix $A$ and a function $f$ that is analytic in the spectrum interval $[\lambda_{\min}, \lambda_{\max}]$, we have,
+Computing the log determinant with stochastic trace estimation involves  quadratic forms $\vect z^\top \log(A) \vect z$, which are expensive to compute and thus need to be approximated. We will explore the Lanczos quadrature, presenting the general idea and main results, the interested reader is referred to \cite{golub_matrices_2010} for details. The first step is to express the quadratic form as a Riemann-Stieljes integral with respect to an unknown measure $\alpha$. Given a symmetric matrix $A$ and a function $f$ that is analytic in the spectrum interval $[\lambda_{\min}, \lambda_{\max}]$, we have,
 
 \begin{equation*}
     \vect x^\top f(A) \vect x = \vect x^\top Q f(\Lambda) Q^\top \vect x = \sum_i f(\lambda_i) (Q^\top \vect x)_i^2 = \int_{\lambda_{\min}}^{\lambda_{\max}} f(\lambda) d \alpha(\lambda) =: I
@@ -383,7 +324,7 @@ where the measure $\alpha(\lambda) = \sum_i w_i^2 I_{\{\lambda_i \le \lambda < \
 with $m \ll n$. The Lanczos quadrature relies on the Gauss quadrature rule, which is of order $2m$, i.e. it integrates exactly all polynomials of degree equal or less than $2m -1$. The following theorem depicts the connection between the Lanczos algorithm and the Gauss quadrature.
 
 \begin{theorem}[{{Theorem 6.2 of \cite{golub_matrices_2010}}}] \label{thm:lanczos_quadrature}
-Consider the Arnoldi decomposition of the symmetric matrix $A \in \R^{n\times n}$ after $m$ steps of Lanczos,
+Consider the Arnoldi decomposition of the symmetric matrix $A \in \R^{n\times n}$ after $m$ steps of Lanczos \textcolor{red}{What do you mean with Lanczos? The Lanczos algorithm is not stated in the paper? Also don't use just "Lanczos", say "Lanczos method" or "Lanczos algorithm".},
 
 \begin{equation} \label{eq:arnoldi_decomp_lanczos}
     A V_m = V_k T_m + \delta_{m+1} \vect v_{m+1} \vect e_m^\top, \quad T_m = \begin{bmatrix}
@@ -407,7 +348,7 @@ where $V_k = \begin{bmatrix} \vect v_1 & \dots & \vect v_m \end{bmatrix} \in\R^{
 and $\vect v_1$ the starting vector. Let $(\mu_i, \vect u_i)$ be the Ritz pairs of $A$, i.e. the eigenpairs of $T_m$, such that $\Vert \vect u_i \Vert_2 = 1$. Then the $m$-point Gauss quadrature formula approximating $\vect v_1^\top f(A) \vect v_1$ is given by the nodes $c_i = \mu_i$ and the weights $b_i = (\vect e_1^\top \vect u_i)^2$.
 \end{theorem}
 
-This theorem tells us that in order to approximate $\vect x^\top f(A) \vect x$, we can run $m$ steps of Lanczos with normalized starting vector $\vect x  / \norm{\vect x}$ and then compute the spectral decomposition $T_m = U M U^\top$ in $\mathcal O(m^2)$ time (since $T_m$ is tridiagonal) to get the approximation $\vect x^\top f(A) \vect x / \norm{\vect x}_2^2$, which can be conveniently written as
+This theorem tells us that in order to approximate $\vect x^\top f(A) \vect x$, we can run $m$ steps of Lanczos with normalized starting vector $\vect x  / \norm{\vect x}$ and then compute the spectral decomposition $T_m = U M U^\top$ in $\mathcal O(m^2)$ time (since $T_m$ is tridiagonal) to get an approximation of $\vect x^\top f(A) \vect x / \norm{\vect x}_2^2$, which can be conveniently written as
 
 \begin{equation} \label{eq:lanczos_quadrature}
     I_m = \sum_{i=1}^m b_i f(c_i) = \norm{\vect x}_2^2 \sum_{i=1}^m f(\mu_i) (\vect e_1^\top \vect u_i)^2 
@@ -424,38 +365,31 @@ where we used that $f$ is analytic in the spectral interval of $T_m$ because of 
 %    %= \vect e_1^\top \sum_{i=1}^m f(\mu_i) \vect v_i \vect v_i^\top \vect e_1 
 %    = \vect e_1^\top U f(M) U^\top \vect e_1 = \vect e_1^\top f(T_m) \vect e_1 \;.
 %\end{equation}
-
+%
 %In practice, one will decompose $T_m = UMU^\top$ in $\mathcal O(m^2)$ time since it is a tridiagonal matrix and use the equality $I_m = \vect e_1^\top U f(M) U^\top \vect e_1$ which only implies element-wise evaluation of $f$ on the Ritz values. 
-However, the Lanczos iteration \textbf{cite algo without reortho} suffers from loss of orthogonality due to computer's finite precision. One remedy is to store the whole basis $V_k$ and perform reorthogonalization at each step $k$. But eventually, we do not need those basis vectors, and we wish to leverage the computations that were already done to solve the linear system \eqref{eq:mbcg_equation}. Indeed, the next section discusses how to recover the $T_m$ matrix from conjugate gradients in constant extra time per step. 
-
+%However, the Lanczos iteration \textbf{cite algo without reortho} suffers from loss of orthogonality due to computer's finite precision. One remedy is to store the whole basis $V_k$ and perform reorthogonalization at each step $k$. But eventually, we do not need those basis vectors, and we wish to leverage the computations that were already done to solve the linear system \eqref{eq:mbcg_equation}. Indeed, the next section discusses how to recover the $T_m$ matrix from conjugate gradients in constant extra time per step. 
+Note that Equation~\ref{eq:lanczos_quadrature} does not involve the basis elements computed by Lanczos. In the next section, we discuss how to leverage computations already done to solve the system \eqref{eq:mbcg_equation} to recover the tridiagonal matrix $T_m$ as a by-product of CG. \textcolor{red}{You don't show the Lanczos algorithm, this is confusing. I also think there should be a section on CG only before you show how you can recycle the tridiagonalizations from CG in Lanczos. }
 
 
 \subsection{Lanczos from CG} \label{sec:lanczos_from_cg}
 
-Let us show how one can recover the Lanczos matrix by reusing computations done in CG for solving the linear system $A \vect x = \vect b$. Of course, in this section we are considering a PSD matrix $A$ as required by CG. Note that we are now considering the Lanczos algorithm for \emph{linear systems}, i.e. the basis $V_m$ and the tridiagonal $T_m$ is obtained in the same fashion but the now starting vector is the initial residuals: $\vect r_0 := \vect b - A \vect x_0$. 
-As we will always use zero starting vectors, construction below will allow us to compute the Lanczos quadrature approximate of $\vect b^\top f(A) \vect b$.
-%In particular, this means that Equation \eqref{eq:lanczos_quadrature} with notation of Theorem \ref{thm:lanczos_quadrature} still holds.
+Conjugate gradients (algorithm~\ref{algo:pcg}) \textcolor{red}{Why don't you include the algorithm in this section? It makes it much clearer.} can be derived from the Lanczos algorithm for linear systems (algorithm~\ref{algo:lanczos}), see section~6.7.1 of \cite{saad_iterative_2003}. However, the reverse is also true if we are not interested in the basis elements \textcolor{red}{basis elements??} of the Krylov subspace. Let us present the relationship between the two algorithms for solving the linear system $A \vect x = \vect b$ with $A$ SPD. 
 
-%Suppose we run $m$ steps of the PCG algorithm CITE ALGO for a PSD $A \in \R^{n\times n}$. With the notation of ALGO LANCZOS, after $m$ steps we have the decomposition
-
-%\begin{equation} \label{eq:arnoldi_decomp_lanczos}
-%    A V_m = V_m T_m + \delta_{m+1} \vect v_{m+1} \vect e_{m+1}^\top, \quad T_m := %\text{tridiag}(\eta_{i-1}, \delta_i, \eta_i) \; ,
-%\end{equation}
-
-Consider the Arnoldi decomposition \eqref{eq:arnoldi_decomp_lanczos} with the above consideration, so that the columns of $V_m$ collecting the orthogonal basis vectors of the Krylov subspace $K_m(A, \vect r_0)$. Recall Lanczos approximates the solution of a linear system $A\vect x = \vect b$ by extracting a solution $\vect x_m = \vect x_0 + V_m \vect y_m$, i.e. $\vect x_m \in \vect x_0 + \mathcal K_m(A, \vect r_0)$ with initial the residuals $\vect r_0 := \vect b - A \vect x_0$. One finds the vector $\vect y_m$ by imposing the Galerkin condition 
+Note first that Lanczos for linear systems is equivalent to the Lanczos iteration for eigenpair approximation, except that the starting vector is the initial residuals $\vect r_0 := \vect b - A \vect x_0$. We will always use $\vect x_0 = \vect 0$, so that the Lanczos quadrature will approximate $\vect r_0^\top f(A) \vect r_0 = \vect b^\top f(A) \vect b$.\textcolor{red}{Why is $b$ a good vector to compute quadratic forms with? I currently have no idea what $b$ is.} 
+Consider the Arnoldi decomposition \eqref{eq:arnoldi_decomp_lanczos} with the columns of $V_m$ collecting the orthogonal basis vectors of the Krylov subspace $K_m(A, \vect r_0)$. Recall Lanczos approximates the solution of a linear system $A\vect x = \vect b$ by extracting a solution $\vect x_m = \vect x_0 + V_m \vect y_m$, i.e. $\vect x_m \in \vect x_0 + \mathcal K_m(A, \vect r_0)$. One finds the vector $\vect y_m$ by imposing the Galerkin condition 
 
 \begin{equation}
     \vect r_m := \vect b - A \vect x_m \perp \mathcal K_m(A, \vect r_0) \; .
 \end{equation}
 
-This can be equivalently reformulated in terms of the orthogonality with the basis elements $\vect v_k$, and recalling that $V_m \vect r_0 = \Vert \vect r_0 \Vert_2 \vect e_1$,
+This can be equivalently reformulated in terms of the orthogonality with the basis elements $\vect v_k$, and recalling that $V_m \vect r_0 = \Vert \vect r_0 \Vert_2 \vect e_1$, \textcolor{red}{below it should be $y_m$ not $y_k$}
 
 \begin{equation} \label{eq:lanczos_solution}
     \vect 0 = V_m^\top \vect r_m = V_m^\top (\vect b - A \vect x_0 - A V_m \vect y_m) = V_m^\top \vect r_0 - V_m^\top A V_m \vect y_k 
     \iff \vect y_m = T_m^{-1} \vect e_1 \norm{\vect r_0}_2 \; .
 \end{equation}
 
-Note that this requires solving a linear system of size $m \ll n$, so that this is computationally favorable compared to the original system. A nice expression can be derived for the residuals, also showing that they are orthogonal to each other:
+\textcolor{red}{You don't state how the tridiagonal matrix $T_m$ appears above. }Note that this requires solving a linear system of size $m \ll n$, so that this is computationally favorable compared to the original system. A nice expression can be derived for the residuals, also showing that they are orthogonal to each other:
 
 \begin{align}
     \vect r_k &:= \vect b - A \vect x_k = \vect r_0 - A V_k \vect y_k\\
@@ -475,7 +409,7 @@ we wish to reuse terms involving the residuals and conjugate directions as compu
     \delta_{k+1} = \norm{\vect v_{k+1}}_A^2 = \frac{\norm{\vect v_{k+1}}_A^2}{\norm{\vect v_{k+1}}_2} = \frac{\norm{\vect r_{k}}_A^2}{\norm{\vect r_k}_2} \; .
 \end{equation*}
 
-The denominator is readily available from the CG algorithm. We must massage a bit the numerator by exploiting the definition of the search direction from the CG algorithm $\vect d_{k+1} = \vect r_{k+1} + \beta_k \vect d_k$ (with shifted indices), and recalling that those search directions are $A$-orthogonal,
+The denominator is readily available from the CG algorithm. We must massage \textcolor{red}{Don't use this in a report} a bit the numerator by exploiting the definition of the search direction from CG (algorithm~\ref{algo:pcg}) $\vect d_{k+1} = \vect r_{k+1} + \beta_k \vect d_k$, shifting indices, and recalling that those search directions are $A$-orthogonal,
 
 \begin{equation*}
     \norm{\vect r_{k}}_A^2 = \vect d_k^\top A \vect d_k - 2 \beta_{k-1} \vect d_k^\top A \vect d_{k-1} + \beta_{k-1}^2 \vect d_{k-1}^\top A \vect d_{k-1} = \norm{\vect d_{k}}_A^2 + \beta_{k-1}^2 \norm{\vect d_{k-1}}_A^2 \; ,
@@ -490,62 +424,65 @@ where we define $\beta_{-1}:= 0, \, \vect d_{-1} := \vect0$ and later $\vect r_{
     \end{cases}
 \end{equation*}
 
-\textbf{TODO show for off-diagonal elements $\eta_i$}
+This indeed only involves quantities computed by CG. The derivation of off-diagonal elements $\eta_i$ is left to the reader. \textcolor{red}{Please do not say this. Say that it can be done similarly or something.}
 
-\section{Preconditioning}
+\textcolor{red}{This section is very difficult to understand. What is $\delta,\nu$ etc?? After reading this I have no idea how to recycle the tridiagonal matrices. }
 
-The motivations and need for preconditioning will be discussed in details in section \ref{}. For now, we recall what preconditioned conjugate gradient and the convergence rate of the algorithm, showing how fast the mBCG algorithm will converge to the true solutions $\vect u_i$ in Equation \eqref{eq:mbcg_equation}. Then, we discuss how to handle preconditioning while computing the quantities needed for training, and the requirements for the preconditioner for computational efficiency.
+\textcolor{red}{Summary: You should start with trace estimation, the Lanczos or CG, then CG or Lanczos (depending on what you presented in the previous section), then the combination of Lanczos and CG, then maybe GPYTorch if necessary.}
 
-Given a SPD matrix $P$, we precondition the system $\widehat K_{XX} \vect x = \vect z$ as
+\section{Preconditioning} \label{sec:precond}
+The motivations and need for preconditioning will be discussed in detail in section \ref{sec:convergence}. For now, we recall the convergence rate of CG, showing how fast the mBCG algorithm will converge to the true solutions $\vect u_i$ in Equation \eqref{eq:mbcg_equation}. \textcolor{red}{You should not forward reference. The way you explain things must come in a logical order. Right now preconditioning comes out of the blue and I it is unclear why you would need to precondition. } Then, we discuss how to handle preconditioning while computing the quantities needed for training, and the requirements for the preconditioner for computational efficiency. Given a SPD matrix $P$, we precondition the system $\widehat K_{XX} \vect u = \vect z$ as
 
 \begin{equation} \label{eq:precond_linsys}
-    \left( P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2} \right) \left( P^{-\frac 1 2} \vect x\right) = P^{-\frac 1 2} \vect z \; ,
+    \left( P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2} \right) \left( P^{\frac 1 2} \vect u\right) = P^{-\frac 1 2} \vect z \; ,
 \end{equation}
 
-The pCG algorithm returns the solution $\vect x$ while requiring access to $P^{-1}$, so that the matrix square root is not needed. 
+The pCG algorithm returns the solution $\vect u$ while requiring access to $P^{-1}$, so that the matrix square root is not needed. 
 
 \begin{observation}
-After $m$ steps of conjugate gradients for solving the linear system $\widehat K_{XX} \vect x = \vect z$, the approximate $\vect x_m$ has the error
+\textcolor{red}{What do you mean with observation?} After $m$ steps of conjugate gradients for solving the linear system $\widehat K_{XX} \vect u = \vect z$, the approximate $\vect u_m$ has the error
 \begin{equation*}
-    \norm{\vect x - \vect x_m}_{\widehat K_{XX}} \le \norm{\vect x - \vect x_0}_{\widehat K_{XX}} \left(  \frac{\sqrt{\kappa(\widehat K_{XX})} - 1}{\sqrt{ \kappa(\widehat K_{XX})} + 1} \right)^m \; ,
+    \norm{\vect u - \vect u_m}_{\widehat K_{XX}} \le 2\norm{\vect u - \vect u_0}_{\widehat K_{XX}} \left(  \frac{\sqrt{\kappa(\widehat K_{XX})} - 1}{\sqrt{ \kappa(\widehat K_{XX})} + 1} \right)^m \; ,
 \end{equation*}
 with $\vect x_0$ the starting vector. The convergence rate of pCG for the system \eqref{eq:precond_linsys} is
 \begin{equation*}
-    \norm{\vect x - \vect x_m}_{\widehat K_{XX}} \le \norm{\vect x - \vect x_0}_{\widehat K_{XX}}  \left( \frac{\sqrt{\tilde \kappa } - 1}{\sqrt{\tilde \kappa} + 1} \right)^m \; , \quad 
+    \norm{\vect u - \vect u_m}_{\widehat K_{XX}} \le 2\norm{\vect u - \vect u_0}_{\widehat K_{XX}}  \left( \frac{\sqrt{\tilde \kappa } - 1}{\sqrt{\tilde \kappa} + 1} \right)^m \; , \quad 
     \tilde \kappa := \kappa\left( P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2} \right) \; .
 \end{equation*}
 \end{observation}
 
-One sees why preconditioning is needed, as the convergence rate will become quite slow for condition numbers above e.g. $100$. However, for pCG to be actually more effective, one needs an efficient oracle $\vect x \mapsto P^{-1} \vect x$. Furthermore, special care should be taken for the computations of the quantities needed for training. Indeed, the $T_m$ matrices in mBCG with preconditioning are now partial tridiagonalizations of $M := P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2}$. This means Lanczos will compute a basis for the Krylov subspace involving the initial \emph{preconditioned} residuals:
+One sees why preconditioning is needed \textcolor{red}{Why don't you start with the theorem above and then explain that reducing condition number improves convergence rate?}, as the convergence rate will become quite slow for condition numbers above e.g. $100$. However, for pCG to be actually more effective than CG, one needs an efficient oracle $\vect x \mapsto P^{-1} \vect x$. Furthermore, we now need to change the estimators \eqref{eq:trace_term}, \eqref{eq:logdet_estimator}. Indeed, the $T_m$ matrices in mBCG with preconditioning are now partial tridiagonalizations of $M := P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2}$. This means Lanczos will compute a basis for the Krylov subspace involving the initial \emph{preconditioned} residuals:
 
 \begin{equation*}
-    \mathcal K_m \left(M, P^{-\frac 1 2} \vect z \right) = \text{span} \left\{P^{-\frac 1 2} \vect z, \ldots, M^{m-1} P^{-\frac 1 2} \vect z \right\} \; ,
+    \mathcal K_m \left(M, P^{-\frac 1 2} \vect r_0 \right) = \text{span} \left\{P^{-\frac 1 2} \vect z, \ldots, M^{m-1} P^{-\frac 1 2} \vect z \right\} \; ,
 \end{equation*}
 
-since the initial preconditioned residuals is $P^{-\frac 1 2} \vect r_0 = P^{-\frac 1 2} \vect z$ as we use a zero starting vector in mBCG. In turn, Lanczos quadrature will return the approximate 
+since $\vect r_0 = \vect z - \widehat K_{XX} \vect u_0$ by using a zero starting vector. In turn, Lanczos quadrature will return the approximate 
 
 \begin{equation*}
     \norm{P^{-\frac 1 2} \; \vect z}_2^2 \vect e_1^\top \log(T_m) \vect e_1 
     \approx \vect z^\top  P^{-\frac 1 2} \log(M) P^{-\frac 1 2} \vect z  \; .    
 \end{equation*}
 
-The new requirement for the stochastic estimator to be unbiased is thus $P^{-\frac 1 2} \vect z \sim \mathcal N(\vect 0, \Id)$, i.e. $\vect z \sim \mathcal N(\vect 0, P)$. To 
-sum up, we now compute the approximation
-
+We wish the right-hand side to approximate the log-det of $M$, so we must change the distribution of probe vectors for unbiasedness of the estimator, which requires $P^{-\frac 1 2} \vect z \sim \mathcal N(\vect 0, \Id)$, i.e. $\vect z \sim \mathcal N(\vect 0, P)$.
+%
+\begin{comment}
 \begin{equation*}
     \log \det \left(P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2} \right) \approx \E_{\vect z \sim \mathcal N(\vect 0, P)} \left[ \norm{P^{-\frac 1 2} \, \vect z} \vect e_1^\top \log(T_m) \vect e_1 \right] \; ,
 \end{equation*}
 
 and the original logdet can easily be recovered with the formula
-
-\begin{equation*}
+\end{comment}
+%
+And we eventually retrieve the original logdet with
+\begin{equation} \label{eq:logdet_precond}
     \log\det \widehat K_{XX} = \log \det P + \log \det \left(P^{-\frac 1 2} \widehat K_{XX} P^{-\frac 1 2} \right) \; .
-\end{equation*}
+\end{equation}
 
-The above modifications impose two new requirements on the preconditioner: it should be easy to compute its logdet and to sample from $\mathcal N(\vect 0, P)$. Finally, we can estimate $\trace( \widehat K_{XX}^{-1} (d \widehat K_{XX} / d\theta))$ by first noticing that\footnote{In Equation (9) of Gardner et al. \cite{gardner_gpytorch_2021}, this relationship is wrongly stated as an approximation.}
+The above modifications impose two new requirements on the preconditioner: it should be easy to compute its logdet and to sample from $\mathcal N(\vect 0, P)$. Given the new distribution of probe vectors, we change the estimate of $\trace( \widehat K_{XX}^{-1} (d \widehat K_{XX} / d\theta))$ by first noticing that
 
 \begin{equation*}
-    \trace(A) = \trace \left(\E_{\mathcal N(\vect 0, P)} \left[ A P^{-1} \vect z \vect z^\top \right] \right) 
+    \trace(A) = \trace \left( A \E_{\mathcal N(\vect 0, P)} \left[ P^{-1} \vect z \vect z^\top \right] \right) 
     = \E_{\mathcal N(\vect 0, P)} \left[ \trace(A P^{-1} \vect z \vect z^\top ) \right]
     = \E_{\mathcal N(\vect 0, P)} \left[ \vect z^\top A P^{-1} \vect z \right] \; ,
 \end{equation*}
@@ -557,16 +494,24 @@ by linearity of expectation and the trace and by the cyclic property of the trac
     \approx \frac 1 N \sum_{i=1}^N \left( \vect z_i^\top \widehat K_{XX}^{-1} \right) \left( \frac{d \widehat K_{XX}}{d\theta} P^{-1} \vect z_i \right) \; ,
 \end{equation*}
 
-where the only difference with \eqref{eq:trace_term} is that we must precondition the probe vectors as $P^{-1} \vect z_i$ on the right hand side. 
+where the only difference with \eqref{eq:trace_term} is that we must precondition \textcolor{red}{Precondition is not the right word here. Also, since $z \sim N(0,P)$ then $\bm{P}^{-1}\bm{z} \sim N(0,P^{-1})$, and to sample from the latter distribution you just need to perform a linear solve with $\bm{P}^{1/2}$. Mention this.} the probe vectors as $P^{-1} \vect z_i$ on the right hand side. 
 
 
 \subsection{Pivoted Cholesky Preconditionner}
 
-The proposed preconditionner in \cite{gardner_gpytorch_2021} is the matrix $\widehat P_k = L_k L_k^\top + \sigma^2 \Id$, with $L_k \mathbb \R^{n \times k}$ the partial pivoted Cholesky factor \cite{harbrecht_low-rank_2012}. 
-The algorithm iteratively builds the matrix $L_k$ up to the desired rank $k$, by adding a rank-one update matrix $\vect \ell_i \vect \ell_i^\top$ at each step $i$, so that $L_k = \sum_{i=1}^k \vect \ell_i \vect \ell_i^\top$. In order to obtain a good low-rank approximation $L_kL_k^\top \approx K_{XX}$, the heuristic selects at each step the largest pivot of the remaining Schur complement and performs pivoting. If we run $k = n$ steps, we eventually obtain the lower triangular Cholesky factor $L$ up to some row permutations.
+The proposed preconditionner in \cite{gardner_gpytorch_2021} is the matrix $\widehat P_k = L_k L_k^\top + \sigma^2 \Id$, with $L_k \in \mathbb \R^{n \times k}$ the partial pivoted Cholesky factor \cite{harbrecht_low-rank_2012}. 
+The algorithm iteratively builds the matrix $L_k$ up to the desired rank $k$, by adding a rank-one update matrix $\vect \ell_i \vect \ell_i^\top$ at each step $i$, so that $L_k = \sum_{i=1}^k \vect \ell_i \vect \ell_i^\top$. In order to obtain a good low-rank approximation $L_kL_k^\top \approx K_{XX}$, the heuristic selects at each step the largest pivot of the remaining Schur complement and perform pivoting. 
+The relationship with the Cholesky decomposition is detailed in the proof of Theorem~\ref{thm:pivchol_decay}. \textcolor{red}{What is the purpose iof this sentence?}
 
 The convergence of the algorithm is assessed by monitoring the trace of the error matrix $E_k := K_{XX} - L_kL_k^\top$, which is computed exactly in only $\mathcal O(n)$ time. This might serves as an early stopping criterion to select a good rank $k$. 
 
+In the rest of this section, we characterize eigenvalues of the preconditioned matrix and state the conditions on the kernel matrix for pivoted Cholesky to be an effective preconditioner. Finally, we discuss how the three requirements (fast linear solves, logdet computation and sampling) are met with this preconditioner. \textcolor{red}{Why don't you mention this immediately and move the theory to a separate section????} 
+
+\textcolor{red}{Any proof that you take from other people must be cited!!!}
+
+% ==============================================================
+% ==============================================================
+\begin{comment}
 In order to get a sense of how the pivoted Choleksy preconditioner affects spectra, we first show loose bounds on the eigenvalues of $P_k$, and that preconditioning occurs in part because it brings the spectrum in $[1; \infty]$. Then, we show how effective is this preconditioning procedure if the spectrum exhibits an exponential decay. 
 Finally, we discuss how the three requirements (fast linear solves, logdet computation and sampling) are met with this preconditioner. 
 Note that if $\sigma(\cdot)$ denotes the spectrum of a matrix, it is easy to show that
@@ -574,7 +519,6 @@ Note that if $\sigma(\cdot)$ denotes the spectrum of a matrix, it is easy to sho
 \begin{equation} \label{eq:precond_spectrum_equality}
     \sigma(\widehat P_k^{-1} \widehat K_{XX}) = \sigma( \widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2}) \, .
 \end{equation}
-
 
 \begin{proposition} \label{thm:pivchol_eigvals}
 The error matrix $E_k := K_{XX} - L_k L_k^\top$ is PSD and ordering the eigenvalues $\lambda_1 \ge \ldots \ge \lambda_n$, those of $P_k$ satisfy
@@ -600,15 +544,26 @@ The following holds for the preconditionned matrix,
     \kappa( \widehat P_k^{-1} \widehat K_{XX} ) \le \lambda_{\max}( \widehat P_k^{-1} \widehat K_{XX} ) \le \frac{\lambda_{\max}(K_{XX}) + \sigma^2}{\lambda_{\max}(K_{XX}) - \norm{E_k}_2} \; .
 \end{equation*}
 \end{proposition}
+\end{comment}
+% ==============================================================
+% ==============================================================
 
-\begin{proof} By equality of spectra \eqref{eq:precond_spectrum_equality}, we express the minimum eigenvalue as a ratio of quadratic forms,
+
+\begin{proposition}\label{thm:pivchol_precond}
+Eigenvalues of the preconditioned matrix are lower bounded by one. \textcolor{red}{Which preconditioned matrix???}
+\end{proposition}
+
+\begin{proof} %By equality of spectra \eqref{eq:precond_spectrum_equality}, we express the minimum eigenvalue as a ratio of quadratic forms,
+Since the decomposition is exact after $n$ steps, $K_{XX} = L_nL_n^\top =\sum_{i=1}^n \vect{\ell}_i\vect{\ell}_i^\top \succcurlyeq L_kL_k^\top$, we have \textcolor{red}{What is $\widehat{P}$????}
 \begin{align*}
-\lambda_{\min}( \widehat P_k^{-1} \widehat K_{XX} )
+\lambda_{\min}( \widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2} )
 &= \min_{\vect v \neq \vect 0 } \frac{\vect v^\top \widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2} \vect v}{ \vect v^\top \vect v} \\
 &= \min_{\vect w \neq \vect 0} \frac{\vect w^\top \widehat K_{XX} \vect w}{\vect w^\top \widehat P_k \vect w} \\
 &= \min_{\vect w \neq \vect 0} \frac{\vect w^\top (\sum_{i=1}^n \vect\ell_i \vect \ell_i^\top + \sigma^2 \Id) \vect w}{\vect w^\top (\sum_{i=1}^k \vect\ell_i \vect \ell_i^\top + \sigma^2 \Id) \vect w}\\
 & \ge 1 \;.
 \end{align*}
+
+\begin{comment}
 Using this bound and the same trick,
 \begin{equation*}
     \kappa( \widehat P_k^{-1} \widehat K_{XX} ) \le \lambda_{\max}( \widehat P_k^{-1} \widehat K_{XX} ) = 
@@ -616,85 +571,103 @@ Using this bound and the same trick,
     \le \max_{\vect w \neq \vect 0} \frac{\vect w^\top \widehat K_{XX} \vect w}{\vect w^\top P_k \vect w} \; ,
 \end{equation*}
 using the bound \eqref{eq:pivchol_eigvals} concludes the proof.
+\end{comment}
+
 \end{proof}
 
+\begin{comment}
 \begin{remark}
 Proposition \ref{thm:pivchol_eigvals} indicates that as the error of pivoted Cholesky decreases, the eigenvalues of $P_k$ will better approximate those of $K_{XX}$. In turn, Proposition \eqref{thm:pivchol_precond} shows how this affects the condition number. However, those bounds are rather loose since we did not assume any specific spectral properties of the kernel matrix. The following lemma truly demonstrates when pivoted Cholesky is an actual effective preconditionner.
 \end{remark}
+\end{comment}
 
-\begin{lemma}[{{Theorem 3.2 of \cite{harbrecht_low-rank_2012}}}] \label{thm:pivchol_exp_decay}
-The trace of the error matrix $K_{XX} - L_k L_k^\top$ in pivoted Cholesky satisfies
+\begin{theorem}[{{Theorem 3.2 of \cite{harbrecht_low-rank_2012}}}] \label{thm:pivchol_decay}
+
+Let $L_k \in \R^{n\times k}$ be the pivoted Cholesky factor of $K_{XX} \in \R^{n\times n}$ after $k$ steps. Then the trace of the low-rank approximation error satisfies
 \begin{equation}
-    \trace(K_{XX} - L_k L_k^\top) \le 4^k n \lambda_k(K_{XX}) \; .
-\end{equation}
-\end{lemma}
-
-\begin{corollary}
-If the eigenvalues of the kernel matrix decay exponentially and faster than $4^{-k}$, 
-
-\begin{equation} \label{eq:kernel_exponential_decay}
-    4^k \lambda_k \le c e^{-bk}
-\end{equation}
-for constants $b, c > 0$ that depend on the kernel matrix, then the trace of the error matrix satisfies
-\begin{equation} \label{eq:pivchol_trace_error}
-    \trace(K_{XX} - L_k L_k^\top) \le C n e^{-kb} \; ,
+    \trace(K_{XX} - L_kL_k^\top) \le n \Gamma_k \lambda_m(K_{XX}) \;,
 \end{equation}
 
-for a constant $C > 0$ that depends on the kernel matrix. 
-\end{corollary}
-
-\begin{lemma}[{{Lemma 1 of \cite{gardner_gpytorch_2021} adapted}}] \label{thm:pivchol_condnum}
-Let $L_k L_k^\top$ be the rank $k$ pivoted Choelsky approximation of $K_{XX}$, then the condition number of the preconditioned matrix satisfies
-
-\begin{equation} \label{eq:pivchol_condnum}
-    \kappa \left( \widehat P_k^{-1} \widehat K_{XX} \right) \le (1 + c \norm{E_k}_2 )^2 \; ,
-\end{equation}
-with the error matrix $E_k = K_{XX} - L_kL_k^\top$ and $c=\sigma^2 + \lambda_{\min}(K_{XX})$.
-\end{lemma}
-
+for some growing factor $\Gamma_k$ defined in the proof. Moreover, in the worst case, $\Gamma_k = \mathcal O(4^k)$. \textcolor{red}{You need to define all quantities. }
+\end{theorem}
 \begin{proof}
-The proof follows exactly the one of lemma 1 of \cite{gardner_gpytorch_2021}, noticing that 
+The proof follows the one of theorem 3.2 in \cite{harbrecht_low-rank_2012}, rephrasing the bounds in terms of $\Gamma_k$ instead of the worst case scenario and introducing pivoting.
+Pivoted Cholesky maintains a vector of permutations $\vect\pi^{(k)} \in \R^n$ updated at each step $k$. It starts with $\vect\pi^{(0)} = (1, 2, \ldots, n)$ and performs greedy updates such that $\vect\pi^{(k+1)}_{1:k} = \vect\pi^{(k)}_{1:k}$ for $k\ge 1$. Denote $\Pi_k \in \R^{n\times n}$ the identity matrix with rows permuted according to $\vect\pi^{(k)}$, and consider the following partitioning,
 \begin{equation*}
-    c := \max\{\norm{\widehat P_k^{-1}}_2, \norm{\widehat K_{XX}^{-1}}_2 \} 
-    = \max\{\lambda_{\min}(\widehat P_k), \lambda_{\min}(\widehat K_{XX})\} \; .
+    \Pi_n K_{XX} \Pi_n^\top = \begin{bmatrix}
+    K_{11} & K_{2,1}^\top \\ K_{2,1} & K_{22}
+    \end{bmatrix}, \quad
+    \Pi_k L_k = \begin{bmatrix}
+    L_{11} \\ L_{12}
+    \end{bmatrix} \; ,
 \end{equation*}
 
-And since $\lambda_{\min}(\widehat P_k) = \sigma^2 + \lambda_{\min}(P_k), \,
-    \lambda_{\min}(\widehat K_{XX}) = \sigma^2 + \lambda_{\min}(K_{XX})$, with
-\begin{equation*}
-    \lambda_{\min}(P_k) = \begin{cases}
-    \lambda_{\min}(K_{XX}) & \text{if } k = n\\
-    0                      & \text{otherwise}
-    \end{cases} \; ,
-\end{equation*}
-the value of $c$ follows.
-\end{proof}
-\makeatletter
-% Reinsert missing \algbackskip
-\def\algbackskip{\hskip-\ALG@thistlm}
-\makeatother
-\begin{corollary}
-If eigenvalues of the kernel matrix decay exponentially as in lemma \ref{thm:pivchol_exp_decay}, then condition number of $\widehat P_k^{-1} \widehat K_{XX}$ decays exponentially fast to $1$ with the rank $k$ of the preconditionner, i.e. 
+with $K_{11}, L_{11} \in \R^{k\times k}$. Note that $L_{11}$ is lower-triangular and is the Cholesky factor of $K_{11}$.
+We define the factor $\Gamma_k := \norm{L_{11}^{-1}}_2^2 \, (L_{11})_{k, k}^2$ and remark that $1/\norm{L_{11}^{-1}}_2^2 = \lambda_k(K_{11})$, whereas $(L_{11})_{k, k}^2$ is simply the $k$th pivot element selected at the $k$th step of pivoted Cholesky.
+By construction of the algorithm, the trace error at step $k$ is bounded by $n-m$ times the pivot element, then using the Courant-Fisher theorem we upper bound eigenvalues of the submatrix $K_{11}$,
 
 \begin{equation*}
-    \kappa \left( \widehat P_k^{-1} \widehat K_{XX} \right) = 1 + \mathcal O(e^{-b k}) \; .
+    \trace(E_k) \le n (L_{11})_{k, k}^2 = n \Gamma_k \lambda_k(K_{11}) \le n \Gamma_k \lambda_k(\Pi_n K_{XX} \Pi_n^\top) = n \Gamma_k \lambda_k(K_{XX}) \; .
 \end{equation*}
-\end{corollary}
-\begin{proof}
-We combine the two previous lemmas.
-By assumption, $\lambda_{\min}(K_{XX}) = \mathcal O(e^{-bn})$, so that the value of the constant in lemma \ref{thm:pivchol_condnum} is $c = \sigma^2 + \mathcal O(e^{-bn}) = \mathcal O(1 + e^{-bn})$. Furthermore the error matrix $E_k$ is PSD, so it holds $\norm{E_k}_2 \le \trace(E_k)$. Inserting the bound \eqref{eq:pivchol_trace_error} into \eqref{eq:pivchol_condnum} yields
 
-\begin{equation*}
-    \kappa \le (1 + c \trace(E_k))^2 = \left[1 + \mathcal O \left( ne^{-bk} (1 + e^{-bn}) \right) \right]^2 \; ,
-\end{equation*}
-which gives the desired bound for a fixed matrix size $n$. 
+The worst case $\Gamma_k = \mathcal O(4^k)$ is achieved when $L_{11}$ has its subdiagonal full of $-1$ (see remarks of theorem 6.1 in \cite{higham_survey_1987}).
 \end{proof}
 
-%That is, one first computes the rank $k$ approximation $L_k L_k^\top \approx K_{XX}$ and then uses the PSD matrix $\widehat P_k := L_kL_k^\top + \sigma^2 \Id$ as a preconditionner of $\widehat K_{XX} = K_{XX} + \sigma^2 \Id$. Indeed, as $k \to n$, $\kappa ( \widehat P_k^{-1} \widehat K_{XX}) \to 1$. Moreover, this preconditionner satisfies all three requirements mentionned above, as shown in sections \ref{sec:precond_solve}, \ref{sec:precond_logdet}, \ref{sec:precond_sampling}.
+\begin{lemma}[Lemma 1 of \cite{gardner_gpytorch_2021}] \label{thm:pivchol_condnum}
+With the same notation as theorem~\ref{thm:pivchol_decay} and the SPD preconditioner $\widehat P_k = L_kL_k^\top + \sigma^2 \Id$, the condition number of the preconditioned matrix satisfies
+\begin{equation*}
+    \kappa \left( \widehat P_k^{-1} \widehat K_{XX} \right)  \le \left( 1 + c \trace(E_k) \right)^2 \;,
+\end{equation*}
+with $E_k = K_{XX} - L_kL_k^\top$ the error matrix and $c= \sigma^2 + \lambda_{\min}(K_{XX})$. \textcolor{red}{include proof}
+\end{lemma}
 
-\subsubsection{Computational Complexity}
+\begin{comment}
+\begin{theorem}\label{thm:mbcg_precond}
+With notation of lemma~\ref{thm:pivchol_decay}, if the spectrum of the kernel matrix decays faster than $1/\Gamma_k$, and further assume that $c\Gamma_k \lambda_k = \mathcal O(\Gamma_k \lambda_k)$, then 
+\begin{equation*}
+    \kappa \left( \widehat P_k^{-1} \widehat K_{XX} \right) = 1 + \mathcal O(n \Gamma_k \lambda_k) \; ,
+\end{equation*}
 
-The computational complexity of pivoted Cholesky takes $\mathcal O(kn^2)$ time. In the GPyTorch framework, we trade fewer steps of mBCG against some initial work (computing $P_k$ and sampling), more work per step (linear solves) and some final work ("correcting" the logdet). We show how those additional computations can be performed efficiently in order to reduce the overall complexity. The following discussion refers to mBCG with a single right-hand side, the batched version will be taken into account later. 
+and mBCG converges as 
+\begin{equation*}
+    \norm{\vect u - \vect u_m}_{\widehat K_{XX}} 
+    \le 2 \norm{\vect u - \vect u_0}_{\widehat K_{XX}} \left(\frac{1}{1 + \mathcal O((n \lambda_k \Gamma_k)^{-1/2}) } \right)^m 
+\end{equation*}
+\end{theorem}
+\begin{proof}
+We combine the previous lemma and theorem. We use the assumptions to drop the higher-order terms, $\mathcal O(c\Gamma_k \lambda_k + c^2\Gamma_k^2\lambda_k^2) = \mathcal O(\Gamma_k \lambda_k)$. 
+The mBCG convergence is simply obtained by plugging the bound of the condition number, as done in proof of lemma 1 in \cite{gardner_gpytorch_2021}.
+\end{proof}
+\end{comment}
+
+\begin{theorem}\label{thm:mbcg_precond}
+With notation of lemma~\ref{thm:pivchol_decay}, and assuming that $c\Gamma_k \lambda_k = \mathcal O(\Gamma_k \lambda_k)$, then 
+\begin{equation*}
+    \kappa \left( \widehat P_k^{-1} \widehat K_{XX} \right) \le (1 + \mathcal O(n \Gamma_k \lambda_k) )^2 \; ,
+\end{equation*}
+
+and mBCG converges as 
+\begin{equation*}
+    \norm{\vect u - \vect u_m}_{\widehat K_{XX}} 
+    \le 2 \norm{\vect u - \vect u_0}_{\widehat K_{XX}} \left(\frac{1}{1 + \mathcal O((n \lambda_k \Gamma_k)^{-1}) } \right)^m 
+\end{equation*}
+\end{theorem}
+\begin{proof}
+We combine the previous lemma and theorem, dropping the constant $c$ thanks to the assumption. 
+The mBCG convergence is simply obtained by plugging the bound of the condition number, as done in proof of lemma 1 in \cite{gardner_gpytorch_2021}. \textcolor{red}{You need to elaborate}
+\end{proof}
+
+
+\begin{remark}
+Those results are essentially a reformulation of the results of the cited papers but with no assumptions on the spectrum of $K_{XX}$, whereas Gardner only state results for the case $\lambda_k$ decays faster than $4^{-k}$. 
+If this is not the case and without characterizing the growth rate of $\Gamma_k$, we have no theoretical guarantee that $\lambda_k\Gamma_k$ even decreases with $k$ and must rely on numerical experiments. \textcolor{red}{You should explain in the beginning that you want to extend the analysis to arbitrary matrices, and you must do that in the beginning. Why do you go through all the trouble and perform these derivations??????}
+%Although we do not characterize the growth rate of $\Gamma_k$, this generic formulation will be useful for numerical experiments.
+%We now rather phrase the convergence of pivoted Cholesky and mBCG in terms of two competing terms, the spectrum and the factor $\Gamma_k$. Unless the spectrum decays faster than the worst case $1/\Gamma_k=4^{-k}$ (as shown in the 1D case for the squared exponential kernel in \cite{gardner_gpytorch_2021}), one has to rely on empirical numerical experiments to assess the convergence. 
+\end{remark}
+
+\subsection{Computational Complexity}
+\textcolor{red}{Is this section really necessary? }
+The computational complexity of pivoted Cholesky takes $\mathcal O(kn^2)$ time \textcolor{red}{cite}. In the GPyTorch framework, we trade fewer steps of mBCG against some initial work (computing $P_k$ and sampling), more work per step (linear solves with the preconditioner) and some final work ("correcting" the logdet). We show how those additional computations can be performed efficiently in order to reduce the overall complexity. The following discussion refers to mBCG with a single right-hand side, the batched version will be taken into account later. 
 
 Noticing that $\widehat P_k$ is a low-rank perturbation to the matrix $\sigma^2 \Id$ whose inverse is known, we leverage the Woodbury formula (see e.g. \cite{henderson_deriving_1981}),
 
@@ -703,7 +676,7 @@ Noticing that $\widehat P_k$ is a low-rank perturbation to the matrix $\sigma^2 
 \begin{equation*}
     (Z + UV^\top)^{-1} = Z^{-1} - Z^{-1} U(\Id + V^\top Z^{-1} U)^{-1} V^\top Z^{-1} \; ,
 \end{equation*}
-
+ 
 by setting $Z := \sigma^2 \Id[n], \, U := L_k =: V$, so that the linear solve now requires inversion of much smaller a $k\times k$ matrix,
 \end{comment}
 
@@ -736,45 +709,41 @@ This trick provides a simple way to sample from any distribution $\mathcal N(\ve
 In our case, the covariance matrix is $\widehat P_k = L_kL_k^\top + \sigma^2 \Id[n]$. We do not know a decomposition $\widehat P_k = M M^\top$, but we can leverage the above trick by noting that the variance of the sum of \emph{independent} random variables is the sum of the variances. So we can set $\vect X = L_k \vect\xi_1 + \sigma \vect\xi_2$, with $\vect\xi_1 \sim \mathcal N(\vect 0, \Id[k]), \, \vect\xi_2 \sim \mathcal N(\vect 0, \Id[n])$ independent to each other, so that $\E[\vect \xi_1 \vect \xi_2^\top] = \mymathbb 0_{k\times n}$ and we get the desired covariance matrix.
 
 
-\section{"Convergence \& Complexity"}
 
-In this section, we start by stating the bounds on the logdet estimator of the preconditioned kernel matrix in terms of the number of probe vectors and mBCG steps in order to reach some maximum error with high probability. Then, we show that the spectrum of some univariate kernel matrices decay exponentially, so that pivoted Cholesky is a good preconditioner. Eventually, we put results together and analyze the overall computational complexity. 
 
-\subsection{Convergence Analysis of logdet Estimator}
+\section{Convergence and Complexity Analysis} \label{sec:convergence}
 
-The convergence of the log-det estimator is given in theorem 2 of Gardner \cite{gardner_gpytorch_2021}, which restates the result of theorem 4.1 of Ubaru \cite{ubaru_fast_2017}. For an SPD matrix $A \in \R^{n\times n}$, the theorem provides a probabilistic bound for the relative error:
+In this section, we start by stating the bounds on the logdet estimator of the preconditioned kernel matrix in terms of the number of probe vectors and mBCG steps in order to reach some maximum error with high probability. Then, we characterize the spectral decay of kernel matrices for different kernels. Eventually, we put results together and analyze the overall computational complexity. 
+
+\subsection{Convergence Analysis of logdet Estimator} \label{sec:convergence_logdet}
+
+The convergence of the log-det estimator is given in theorem 2 of Gardner \cite{gardner_gpytorch_2021}, which restates the result of theorem 4.1 of Ubaru \cite{ubaru_fast_2017}. For an SPD matrix $M \in \R^{n\times n}$, the theorem provides a probabilistic bound for the relative error:
 
 \begin{equation} \label{eq:logdet_proba_bound}
-    \mathbb P \left( \left| \Gamma_{N, m} - \trace(\log A) \right| \ge \epsilon | \trace(\log A) | \right) \le \delta \; ,
+    \mathbb P \left( \left| \Gamma_{N, m} - \trace(\log M) \right| \ge \epsilon | \trace(\log M) | \right) \le \delta \; ,
 \end{equation}
 
-that holds with a number of probe vectors $N$ and a number of Lanczos steps $m$. In our case, we apply it to the preconditionned matrix
+that holds with a number of probe vectors $N$ and a number of Lanczos steps $m$, with $\Gamma_{N, m}$ defined in Equation~\eqref{eq:logdet_estimator}. In our case, we apply it to the preconditionned matrix
 
-\begin{equation} \label{mhh je vois ceq:precond_matrix}
-    A := \widehat P^{-1/2}_k \widehat K_{XX} \widehat P^{-1/2}_k \; .
+\begin{equation} \label{eq:precond_matrix}
+    M := \widehat P^{-1/2}_k \widehat K_{XX} \widehat P^{-1/2}_k \; .
 \end{equation}
 
 \begin{theorem}[{{Theorem 2 of \cite{gardner_gpytorch_2021}}}] \label{thm:gardner_logdet}
-Let $A$ be the preconditionned kernel matrix \eqref{eq:precond_matrix}. If we use $N \ge \frac{32}{\epsilon^2} \log \frac{2}{\delta}$ probe vectors and run $m \ge \frac{1}{4} \sqrt{\kappa(A)} \log \frac{D}{\epsilon}$ mBCG iterations, with $D$ that also depends on the condition number, then the probabilistic bound \eqref{eq:logdet_proba_bound} holds. 
+Let $M$ be the preconditionned kernel matrix \eqref{eq:precond_matrix}. If we use $N \ge \frac{32}{\epsilon^2} \log \frac{2}{\delta}$ probe vectors and run $m \ge \frac{1}{4} \sqrt{\kappa(M)} \log \frac{D}{\epsilon}$ mBCG iterations, with $D$ that also depends on the condition number, then the probabilistic bound \eqref{eq:logdet_proba_bound} holds. \textcolor{red}{what is D?} 
 \end{theorem}
 
-The reader may note that the assumption of Ubaru --- $\log$ should not cross zero within the spectral interval of $A$ --- indeed holds because $\lambda_{\min}(A) \ge 1$ by Proposition \ref{thm:pivchol_precond}, so that $\lambda_{\min}(\log A) \ge 0$, although this is curiously not mentionned in Gardner et al. However, the number of probe vectors $N$ in the above theorem is matrix-independent. One prefers a bound that explicitly depends on the matrix properties, and it would make sense that this bound depends on the variance of the trace estimator as in \cite{cortinovis_randomized_2021}, i.e. the Frobenius norm (see Proposition \ref{prop:trace_estim_variance}). For this reason, let us state the following result.
+The reader may note that the assumption of Ubaru --- $\log$ should not cross zero within the spectral interval of $M$ --- indeed holds because $\lambda_{\min}(M) \ge 1$ by Proposition \ref{thm:pivchol_precond}, so that $\lambda_{\min}(\log M) \ge 0$. However, the number of probe vectors $N$ in the above theorem is matrix-independent. One prefers a bound that explicitly depends on the matrix properties, and it would make sense that this bound depends on the variance of the trace estimator as in \cite{cortinovis_randomized_2021}, i.e. the Frobenius norm (see Proposition \ref{prop:trace_estim_variance}). For this reason, let us state the following result.
 
-% This is just so wrong
-\begin{comment}
-More importantly, Gardner considers the preconditionned SPD matrix $A := \widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2}$. One of the assumption of Ubaru is that the considered function (i.e., $\log$) should not cross zero inside the spectral interval $[\lambda_{\min}(A), \lambda_{\max}(A)]$. This would require $\lambda_{\min} > 1$ or $\lambda_{\max} < 1$, which is not guaranteed here. The reason is that Ubaru uses a result from \cite[Theorem 3.]{roosta-khorasani_improved_2015} for trace estimation of PSD or NSD matrices. If $\log A$ is indefinite, Ubaru proposes \cite[corollary 4.5]{ubaru_fast_2017} an alternative result where now $N \propto n^2$. As mentionned in \cite{cortinovis_randomized_2021}, this is worse than the naive computation using the $N=n$ probe vectors $\vect e_i$ of the canonical basis. 
-\end{comment}
-
-%Finally, Gardner uses the standard normal distribution for the probe vectors instead of the Rademacher distribution as considered by Ubaru. Special care should thus be taken for the unboundedness of such vectors, 
 
 \begin{theorem}[{{Theorem 19 of \cite{cortinovis_randomized_2021} restated}}] \label{thm:cortinovis}
-Let $A$ be the preconditionned kernel matrix \eqref{eq:precond_matrix} with $n \ge 2$. Suppose that 
+Let $M$ be the preconditionned kernel matrix \eqref{eq:precond_matrix} with $n \ge 2$. Suppose that 
 \begin{itemize}
-    \item $N \ge \frac{16}{\epsilon^2} (\norm{\log A}_F^2 + \epsilon \norm{\log A}_2) \log\frac{4}{\delta}$, and $N \le \frac{\delta}{2} e^{n^2/16}$
+    \item $N \ge \frac{16}{\epsilon^2} (\norm{\log M}_F^2 + \epsilon \norm{\log M}_2) \log\frac{4}{\delta}$, and $N \le \frac{\delta}{2} e^{n^2/16}$
     %\item $N \ge \frac{16}{\epsilon^2} (\rho_{\log} \norm{\log A}_2^2 + \epsilon \norm{\log A}_2) \log\frac{4}{\delta}$, and $N \le \frac{\delta}{2} e^{n^2/16}$
-    \item $m \ge \frac{\sqrt{\kappa(A) + 1}}{4} \log\left( \frac{4}{\epsilon} n^2 \log(2\kappa(A)) (\sqrt{\kappa(A) + 1} + 1) \right)$
+    \item $m \ge \frac{\sqrt{\kappa(M) + 1}}{4} \log\left( \frac{4}{\epsilon} n^2 \log(2\kappa(M)) (\sqrt{\kappa(M) + 1} + 1) \right)$
 \end{itemize}
-Then the log-determinant approximation satisfies the absolute error bound $\mathbb P( | \Gamma_{N, m} - \log\det A | \ge \epsilon) \le \delta$.
+Then the log-determinant approximation satisfies the absolute error bound $\mathbb P( | \Gamma_{N, m} - \log\det M | \ge \epsilon) \le \delta$.
 \end{theorem}
 
 \begin{comment}
@@ -788,37 +757,44 @@ One can make the following observations from the above theorem,
 \end{comment}
 
 \begin{observation}
-Turning Theorem \ref{thm:cortinovis} into a relative error bound, we have for fixed $\epsilon, \delta$ that $N = \mathcal O(\norm{\log A}_F^2 / \trace(\log A)^2)$. Recall that $\log A$ is PSD by Proposition \ref{thm:pivchol_precond}, so that $\trace(\log A) \ge \norm{\log A}_F$ and the bound of Theorem \ref{thm:cortinovis} compares favorably to Theorem \ref{thm:gardner_logdet}.
+Turning Theorem \ref{thm:cortinovis} into a relative error bound, we have for fixed $\epsilon, \delta$ that $N = \mathcal O(\norm{\log M}_F^2 / \trace(\log M)^2)$. Since $\log M$ is PSD, $\trace(\log M) \ge \norm{\log M}_F$ and the bound of Theorem \ref{thm:cortinovis} compares favorably to Theorem \ref{thm:gardner_logdet}.
 \end{observation}
 
 \begin{observation}[Effect of preconditioning]
-The bound on $N$ is mainly driven by the error $\epsilon$ since the matrix logarithm will mitigate the extreme eigenvalues. We see the importance of preconditioning as $m$ should roughly scale with $\sqrt{\kappa(A)}$. 
-However, the key of preconditioning here is that $\log\det \widehat K_{XX} = \log\det A + \log\det \widehat P$, with $\log\det \widehat P$ computed exactly. As we increase the rank $k$ of the preconditionner, $\log\det A \to 0$. In turn, the error of the logdet estimator of $A$ will have little contribution.
+The bound on $N$ is mainly driven by the error $\epsilon$ since the matrix logarithm will mitigate the extreme eigenvalues. We see the importance of preconditioning as $m$ should roughly scale with $\sqrt{\kappa(M)}$. 
+Another key of preconditioning here is that $\log\det \widehat K_{XX} = \log\det M + \log\det \widehat P$, with $\log\det \widehat P$ computed exactly. As we increase the rank $k$ of the preconditionner, $\log\det M \to 0$. In turn, the error of the logdet estimator of $M$ will have little contribution.
 
-%$\log \det A$ will decreasingly contribute to $\log\det \widehat K_{XX}$ as $k$ increases. Since $\log\det \widehat K_{XX} = \log\det A + \log\det \widehat P$
-%as $P_k$ better approximates $K_{XX}$, the matrix $A$ will tend to the identity. In turn $\log \det A$ will 
 \end{observation}
 
 \subsection{Spectrum of Kernel Matrices}
 
-In this section, we aim to show that the eigenvalues of the kernel matrix with RBF or Matern kernels decay exponentially fast. That is, we restate (and correct) the proof of Gardner for the RBF kernel, and extend the result for the Matern kernel. The idea is to first relate eigenvalues of the kernel matrix to the error of polynomials approximating the kernel function. Then, we show that the error of the polynomial approximation decreases exponentially fast with respect to the degree.
-
-We will note $k_{\text{SE}}(r; \, \gamma) = e^{-\gamma r^2}$ the squared exponential kernel, and 
+\textcolor{red}{It is unclear why you do that. Are you even using any of these results???} In this section, we aim to characterize the spectral decay of kernel matrices, focusing on the squared exponential (SE) and Matern kernels. 
+Both are radial kernels, i.e. $k(\vect x_i, \vect x_j)$ only depends on $r_{ij} := \norm{\vect x_i -  \vect x_j}_2$. They are defined as $k_\text{SE}(r; \, \ell) = e^{-r^2 / \ell}$ and
 
 \begin{equation*}
-    k_{\text{Matern}}(r ; \, l, \nu) = \frac{1}{\Gamma(\nu) 2^{\nu - 1}} \left( \frac{\sqrt{2\nu}}{l} r \right)^\nu K_\nu \left( \frac{\sqrt{2\nu}}{l} r \right) \; ,
+    k_{\text{Matern}}(r ; \, \ell, \nu) = \frac{1}{\Gamma(\nu) 2^{\nu - 1}} \left( \frac{\sqrt{2\nu}}{\ell} r \right)^\nu K_\nu \left( \frac{\sqrt{2\nu}}{\ell} r \right) \; ,
 \end{equation*}
 
-the Matern kernel, with $\Gamma$ the gamma function and $K_\nu$ the modified Bessel function of the second kind. We will restrict our discussion to the case $\nu$ is half integer, $\nu = p+1/2, \, p \in \mathbb N$. The Matern kernel becomes exceptionally simple in this case (see Equation (4.16) of \cite{rasmussen_gaussian_2005}), being a product of an exponential and a polynomial of degree $p$,
+with $\Gamma$ the gamma function and $K_\nu$ the modified Bessel function of the second kind. Note that the SE kernel is a special case of the Matern kernel in the limit $\nu\to\infty$ (see e.g. \cite{borovitskiy_matern_nodate}, \cite{genton_classes_2002}, \cite{rasmussen_gaussian_2005}).
+
+Gardner et al. \cite{gardner_gpytorch_2021} treat the squared exponential with 1D data in $[0, 1]$, casting the spectral analysis as a polynomial approximation problem (lemma 4). They use Chebyshev expansions (lemma 5) to eventually show a super-exponential spectral decay. 
+
+We wish to develop a set of tools to extend those results for more general cases (higher dimensions and other kernels). 
+We start by mentioning Chebyshev expansions for the SE kernel, including the missing proof of lemma 5 of \cite{gardner_gpytorch_2021} for completeness.  
+We then mention results based on the spectral analysis of a linear operator associated to $k$. We eventually present in passing an alternative method that is useful in the case the error of the kernel Mercer expansion is known. 
+
+
+\begin{comment}
+We will restrict our discussion to the case $\nu$ is half integer, $\nu = p+1/2, \, p \in \mathbb N$. The Matern kernel becomes exceptionally simple in this case (see Equation (4.16) of \cite{rasmussen_gaussian_2005}), being a product of an exponential and a polynomial of degree $p$,
 
 \begin{equation} \label{eq:matern_half_integer}
     k_{\text{Matern}}(r ; \, l, p + 1/2) = \exp\left( - \frac{\sqrt{2\nu}}{l} r \right) \frac{p!}{(2p)!} \sum_{i=0}^p \frac{p+i}{i!(p-i)!} \left( \frac{\sqrt{8\nu}}{l} r \right)^{p-i} \; .
 \end{equation}
 
-Note that this special case is not too restrictive, as the most used cases in Machine Learning are $\nu = 3/2$ and $\nu = 5/2$, \textbf{TODO cite ref}. Furthermore, note that in the limit $\nu \to \infty$, the Matern kernel becomes the squared exponential (see e.g. \cite{borovitskiy_matern_nodate}, \cite{genton_classes_2002}, \cite{rasmussen_gaussian_2005}). 
+Note that this special case is not too restrictive, as the most used cases in Machine Learning are $\nu = 3/2$ and $\nu = 5/2$, \textbf{TODO cite ref}. Furthermore, note that in the limit $\nu \to \infty$, the Matern kernel becomes the squared exponential (see e.g. \cite{borovitskiy_matern_nodate}, \cite{genton_classes_2002}, \cite{rasmussen_gaussian_2005}).
+\end{comment}
 
-%Intro: want to show the spectral decay of kernel matrices so that pivoted Cholesky is a good preconditionner and link with theorem of Cortinovis. 
-
+\begin{comment}
 \subsubsection{Spectral Decay as a Polynomial Approximation Problem}
 
 We first state a series of results that will be later used to prove Lemma \ref{thm:spectral_decay_poly_approx}.
@@ -846,7 +822,8 @@ so that $\norm{A}_2^2 = \lambda_{\max}(A^\top A) \le n^2\epsilon^2$.
 Let $B, C \in \R^{n \times n}$ be any matrices. Let $\sigma(B)$ denote the $k$th largest eigenvalue of $B$. Then $\sigma_k(B + C) \le \sigma_k(B) + \norm{C}_2^2$.
 \end{proposition}
 \begin{proof}
-\begin{comment}
+
+%\begin{comment}
 By the min-max theorem,
 \begin{equation*}
     \lambda_k(B + C) = 
@@ -857,7 +834,8 @@ By the min-max theorem,
     \min_{\substack{\vect v \in \mathcal U \\ \norm{\vect v}_2 = 1}} \;
     \vect v^\top B \vect v + \norm{C}_2 = \lambda_k(B) + \norm{C}_2 \; .
 \end{equation*}
-\end{comment}
+%\end{comment}
+
 By the Courant-Fisher theorem for singular values % proof: just apply minimax principle and sigma(A) = lambda(A^T A)! https://www.uio.no/studier/emner/matnat/ifi/nedlagte-emner/INF-MAT4350/h10/undervisningsmateriale/lecture6.pdf 
 \begin{equation*}
     \sigma_k(B + C) = 
@@ -888,36 +866,43 @@ Given nodes $x_1, \ldots, x_n \in [-1, 1]$, define the kernel matrix $K_{XX} \in
 Let $\tilde K \in \R^{n \times }$ be the matrix sampling $p_{d}$ on the grid, i.e. $\tilde k_{ij} = p_{d}(x_i-x_j)$. By Proposition \ref{thm:sampling_poly_rank}, $\text{rank}(\tilde K) \le d$, so that $\sigma_k(\tilde K) = 0 \; \forall \, k \ge d+1$. By assumption, the entries of the error matrix $E = K - \tilde K$ are bounded, so $\norm{E}_2 \le n\epsilon$ by Proposition \ref{thm:gershogorin}. One concludes with Proposition \ref{thm:bound_singvals_sum_matrices}, $\lambda_{d+1}(K) = \sigma_{d+1}(K) \le \sigma_{d+1}(\tilde  K) + \norm{E}_2 \le n \epsilon$.
 \end{proof}
 
-\begin{comment}
+%\begin{comment}
 \begin{remark}
 The above lemma only considers even polynomial $p_{2d}$ whereas Gardner states the bound for any polynomial. However, if $p$ is not even, $\tilde K$ and $E$ are not symmetric and Proposition \ref{thm:bound_singvals_sum_matrices} would not hold. 
 \end{remark}
-\end{comment}
+%\end{comment}
 
 \begin{remark}
 The proof of the above lemma has a small modification: we consider singular values instead of eigenvalues of $\tilde K$, since it is not necessarily symmetric, and thus we could not bound the eigenvalues of the sum of non-symmetric matrices. 
 \end{remark}
 
+\end{comment}
+
+
 
 \subsubsection{Chebyshev approximation of Kernel Functions}
 
-In order to seek for an exponential decay, we need to approximate the kernel functions with a uniform norm as small as possible. Chebyshev polynomials are near-minimax approximations \cite{elliott_error_1987}, meaning they are almost optimal for minimizing the uniform norm of the polynomial approximation error. Intuitively, % mhhh, this is loosely speaking... still mention it?
-this is achieved by uniformly spreading the error over the whole approximation interval, in contrast to e.g. the naive Taylor expansions. % Taylor polynomials is probably the worst example possible, still mention it ?
-In addition, they have some remarkable properties that make them convenient to use in some numerical analysis settings. 
-
-We briefly recall the polynomial approximation with Chebyshev polynomials of the first kind, see e.g. chapter 3 of \cite{gil_numerical_2007} for details. Those polynomials are defined as $T_k(x) := \cos(k \arccos(x)), x \in [-1, 1]$. Using trigonometric identities, the following recurrence relation can be obtained:
+We briefly recall the Chebyshev polynomials of the first kind, see e.g. chapter 3 of \cite{gil_numerical_2007} for details. Those polynomials are defined as $T_k(x) := \cos(k \arccos(x)), x \in [-1, 1]$. Using trigonometric identities, the following recurrence relation can be obtained:
 
 \begin{equation*}
 T_0(x) = 1, \quad T_1(x) = x, \quad T_k(x) = 2xT_{k-1}(x) - 2T_{k-2}(x), \quad k \ge 2, \, x \in [-1, 1] \; .    
 \end{equation*}
 
-A Chebyshev expansion of a function \textbf{todo give conditions on f} $f$ is thus
+Chebyshev polynomials are near-minimax approximations \cite{elliott_error_1987}, meaning they are almost optimal for minimizing the uniform norm of the polynomial approximation error. 
+One first considers the Chebyshev expansion of some continuous function $f: [-1; 1] \to \R$:
+
 
 \begin{equation} \label{eq:chebyshev_expansion}
     f(x) = \frac 1 2 a_0 + \sum_{k=1}^\infty a_k T_k(x) \; .
 \end{equation}
 
-So that the degree $l$ Chebyshev approximation of $f$ is the above sum truncated at the $l$ first terms. The $T_k$ polynomials are orthogonal with respect to the weight function $w(x) = 1/\sqrt{1-x^2}$, so it is easy to derive the expression for the coefficients from \eqref{eq:chebyshev_expansion}, knowing that $\langle T_k, T_k\rangle _w = \pi/2$ for $k > 0$,
+and sets the degree $d$ Chebyshev approximation as the first $d$ terms of the above sum. The error is upper bounded by:
+
+\begin{equation*}
+    \Vert f - p_l \Vert = \left\Vert \textstyle\sum_{i=l+1}^\infty a_k T_k \right\Vert \le \sum_{i=l+1}^\infty |a_k|
+\end{equation*}
+
+since $|T_k(x)| \le 1$. Chebyshev polynomials are orthogonal with respect to the weight function $w(x) = 1/\sqrt{1-x^2}$. Knowing that $\langle T_k, T_k\rangle _w = \pi/2$ for $k > 0$, the analytical expression of $a_k$ coefficients is derived from \eqref{eq:chebyshev_expansion}:
 
 \begin{equation} \label{eq:chebyshev_coef}
     a_k = \frac{2}{\pi} \int_{-1}^1 f(x) T_k(x) \frac{1}{\sqrt{1-x^2}} dx \; , \quad k \ge 1 \; .
@@ -929,21 +914,15 @@ With a change of variable $x = \cos \theta$, this can be rewritten as
     a_k = \frac{2}{\pi} \int_0^\pi f(\cos\theta) \cos(k\theta) d\theta \;, \quad k \ge 1 .
 \end{equation}
 
-Eventually, we are interested in (bounding) the \emph{error} of the approximation over the interval $[-1, 1]$. One of the many nice properties of the Chebyshev polynomials is that they are bounded, this is easy to see from the definition. One way of bounding the error is to find an expression for $a_k$s an then upper bound
+%In the lemma below, we bound the error of such an approximation for the squared exponential kernel. In particular, we re-state lemma 5 of \cite{gardner_gpytorch_2021} but include the missing proof. 
 
+\begin{lemma} \label{thm:se_decay_1d}
+Let $p_{2d}$ be the Chebyshev expansion of the squared exponential of degree $2d$, then the error is
 \begin{equation*}
-    \Vert f - p_l \Vert = \left\Vert \textstyle\sum_{i=l+1}^\infty a_k T_k \right\Vert \le \sum_{i=l+1}^\infty |a_k|
+    | e^{-\gamma x^2} - p_{2d}(x)| \le 2 e^{-\gamma / 4} I_{d+1}(\gamma / 4) \;, \quad |x| \le 1 \;, 
 \end{equation*}
 
-with $p_l = \frac 1 2 a_0 +  \sum_{i=1}^l a_k T_k$ and $\Vert \cdot \Vert$ the uniform norm. In the lemma below, we perform this error analysis for the squared exponential, i.e. re-state Lemma 5 of \cite{gardner_gpytorch_2021}, but we include the missing proof. 
-
-\begin{lemma}
-Let $p_{2l}$ be the Chebyshev expansion of the squared exponential of degree $2l$, then the error is
-\begin{equation*}
-    | e^{-\gamma x^2} - p_{2l}(x)| \le 2 e^{-\gamma / 4} I_{l+1}(\gamma / 4) \; ,
-\end{equation*}
-
-with $I_k$ the modified Bessel function of the first kind.
+with $I_d$ the modified Bessel function of the first kind of order $d$.
 \end{lemma}
 \begin{proof}
 It is easy to show by recursion that $T_k(-x) = (-1)^k T_k(x)$, i.e. $T_k$ is odd for $k$ odd. Since $e^{-\gamma x^2}$ is even, we see from \eqref{eq:chebyshev_coef} that odd coefficients $a_k$ vanish. We use equation \eqref{eq:chebyshev_coef_cos} to compute the coefficients, with the trigonometric identity $\cos^2\theta = (1 + \cos(2\theta))/2$,
@@ -964,27 +943,65 @@ and computing only even coefficients, we retrieve the Bessel functions with a ch
 \end{equation*}
 Since for integer order, $|I_n(-x)| = I_n(x)$, the error is 
 \begin{equation*}
-    |e^{-\gamma x^2 } - p_{2l} |\le 2 e^{-\gamma/2} \sum_{i=l+1}^\infty I_{l}(\gamma / 2) \; .
+    |e^{-\gamma x^2 } - p_{2d} |\le 2 e^{-\gamma/2} \sum_{l=d+1}^\infty I_{l}(\gamma / 2) \; .
 \end{equation*}
 Using lemma 6 of \cite{gardner_gpytorch_2021} to bound the sum of Bessel functions concludes the proof. 
 \end{proof}
 
 
-\begin{comment}
-We now extend results of Gardner et al. by proceeding in a similar fashion.
+\subsubsection{Mercer expansion}
 
-\begin{lemma}
+An alternative approach to Chebyshev approximatino relies on eigen-decomposition of the kernel function. If $k: D \times D \to \R$ with $D \subset \R^d$ compact, then by the Mercer theorem (see e.g. theorem 4.2 of \cite{rasmussen_gaussian_2005}),
 
-\end{lemma}
+\begin{equation*}
+    k(\vect x_i, \vect x_j) = \sum_{m=1}^\infty \lambda_m \phi_m(\vect x_i) \phi_m(\vect x_j) \;.
+\end{equation*}
+
+Then we define the rank $m$ matrix $\tilde K_d = \Phi^\top \text{diag}(\lambda_1, \ldots, \lambda_m) \Phi$ corresponding to the truncated Mercer expansion with the $m$ first terms, with $\Phi_{ij} = \phi_i(\vect x_j)$.
+
+\begin{proposition}[Spectral norm of matrix with bounded entries] \label{thm:gershogorin}
+Let $A \in \R^{n \times n}$ be any square matrix with bounded entries $|a_{ij}| \le \epsilon$, then $\norm{A}_2 \le n\epsilon$.
+\end{proposition}
+% Note: go through A^T A because what if A is non diagonalizable ?
 \begin{proof}
-We first compute the even Chebyshev coefficients for the exponential $e^{- \alpha |r|}$, as done for the squared exponential,
+We apply the Gershorogin theorem on $A^\top A$. By assumption of bounded entries, 
+\begin{equation*}
+    (A^\top A)_{ij} = \textstyle\sum_{k=1}^n a_{ki} a_{kj} \le n\epsilon^2 \; ,
+\end{equation*}
 
-\begin{align*}
-    a_{2k} &= \frac{2}{\pi} \int_0^\pi e^{-\alpha |\cos\theta |} \cos(2k\theta) d\theta = \frac{2}{\pi} \int_0^\pi e^{-\alpha \cos(\beta /2)} \cos(k\beta) d\beta \\
-    %&\le \frac{2}{\pi} \int_0^\pi e^{-\alpha \cos \beta} \cos(k\beta) d\beta = 2 I_k(-\alpha)
-\end{align*}
+and the Gershogorin theorem states, for some row $r$,
+
+\begin{equation*}
+    \lambda_{\max}(A^\top A) \le \textstyle\sum_{k=1}^n |(A^\top A)_{rk}| \; ,
+\end{equation*}
+
+so that $\norm{A}_2^2 = \lambda_{\max}(A^\top A) \le n^2\epsilon^2$.
 \end{proof}
-\end{comment}
+
+\begin{proposition}
+Let $\vect x_1, \ldots, \vect x_n \in D$ be $d$-dimensional data in $D \subset \R^d$ compact.
+If $k_m$ is the truncated Mercer expansion of $k: D\to D$ with $m$ terms and satisfies 
+\begin{equation*}
+    \norm{k - k_m}_{L_\infty (D^2)} \le \epsilon_m \;,
+\end{equation*}
+then $\lambda_{m+1}(K_{XX}) \le n \epsilon_m$.
+\end{proposition}
+\begin{proof}
+The proof is similar to the one of lemma 4 in \cite{gardner_gpytorch_2021}. Consider the error matrix $E_m = K_{XX} - \tilde K_m$, by assumption $\norm{E_m}_\infty = \epsilon_m$. All $K_{XX}, \tilde K_m, E_m$ being PSD, by the min-max principle,
+
+\begin{equation*}
+    \lambda_{k}(K_{XX}) = 
+    \max_{\substack{\mathcal U \subset \R^n \\ \dim \mathcal U = k}} \;
+    \min_{\substack{\vect v \in \mathcal U \\ \norm{\vect v}_2 = 1}} \;
+    \vect v^\top (\tilde K_m + E_m) \vect v \le  
+    \max_{\substack{\mathcal U \subset \R^n \\ \dim \mathcal U = k}} \;
+    \min_{\substack{\vect v \in \mathcal U \\ \norm{\vect v}_2 = 1}} \;
+    \vect v^\top \tilde K_m \vect v + \norm{E_m}_2 = \lambda_k(\tilde K_m) + \norm{E_m}_2 \; .
+\end{equation*}
+
+Since $\tilde K_m$ has rank at most $m$, we have $\lambda_{m+1}(\tilde K_m) = 0$ and hence $\lambda_{m+1}(K_{XX}) \le \norm{E_m}_2$. Using the proposition \ref{thm:gershogorin} concludes the proof. 
+\end{proof}
+
 
 
 \subsubsection{Eigenanalysis of Hilbert-Schmidt Operator} 
@@ -1014,7 +1031,7 @@ so that we have a matrix eigenproblem, with $\tilde \lambda_i$ eigenvalues of th
     K_{XX} \vect \Phi_i = \lambda_i(K_{XX}) \vect \Phi_i \; .
 \end{equation*}
 
-This method always underestimate the eigenvalues of the operator $T_k$ (see proof of theorem 4 in \cite{banerjee_parallel_2013} and \cite{baker_numerical_1977}), i.e. $ \lambda_i(K_{XX}) \le n \lambda_i$. The goal is now to characterize the decay of the eigenvalues of this operator. The following theorem states results for the squared exponential kernel using the above method:
+This method always underestimate the eigenvalues of the operator $T_k$ (see proof of theorem 4 in \cite{banerjee_parallel_2013} and \cite{baker_numerical_1977}), i.e. $ \lambda_i(K_{XX}) \le n \lambda_i(T_k)$. The goal is now to characterize the decay of the eigenvalues of this operator. The following theorem states results for the squared exponential kernel using the above method:
 
 \begin{theorem}[Theorem 4 of \cite{banerjee_parallel_2013}]
 Let $\vect x_1, \ldots, \vect x_n \in D \subset \R^d$ be the $d$-dimensional data in $D$ compact. Then the eigenvalues of the kernel matrix $K_{XX}$ for the squared exponential kernel function $k: D \to D, \, k(\vect x, \vect y) = e^{-\gamma \norm{\vect x - \vect y}_2^2}$ satisfies, for some $C > 0$,
@@ -1023,6 +1040,25 @@ Let $\vect x_1, \ldots, \vect x_n \in D \subset \R^d$ be the $d$-dimensional dat
 \end{equation*}
 \end{theorem}
 
+For the one-dimensional case $d=1$, we retrieve the super-exponential spectral decay of lemma \ref{thm:se_decay_1d}. In a higher-dimensional case $d>1$, the decay is sub-exponential because the $d$th square root accounts for possible eigenvalue multiplicity (see remark 2.20 of \cite{schwab_karhunenloeve_2006}).
+
+
+For the case of Matern kernels with smoothness $\nu$, the stochastic process $f$ is $\lceil \nu \rceil -1$ times differentiable in the mean-square sense (see \cite{rasmussen_gaussian_2005} section 4.2.1). In the 1D case with uniformly distributed data, if a stochastic process is $r$ times MS-differentiable, eigenvalues of $T_k$  decay algebraically as $m^{-2r - 2}$ (see section 4.3 of \cite{rasmussen_gaussian_2005}). This leads to the following theorem. 
+
+\begin{theorem} \label{thm:matern_1d_uniform}
+Let $x_1, \ldots, x_n \in \mathcal U([0, 1])$ be one-dimensional data. Then the eigenvalues of the kernel matrix $K_{XX}$ for the Matern kernel with smoothness parameter $\nu$ satisfiy, for some $C > 0$,
+\begin{equation*}
+    \lambda_m(K_{XX}) \le C n m^{-2\lceil \nu \rceil} \; .
+\end{equation*}
+\end{theorem}
+
+For non-compact domain $D$, the operator $T_k$ can be generalized by assuming a probability density function $\vect x_1, \ldots, \vect x_n \sim p$ and introducing the weight function $p(\vect x)$ in \eqref{eq:kernel_linear_operator}. The approximation \eqref{eq:nystrom} is then interpreted as an estimator of the expectation $\E_{\vect x \sim p}[k(\vect x, \cdot) f(\vect x)]$. Some results then relate the eigenvalue decay to the decay of the Fourier transform of $k$ and to the decay of $p$ (see appendix C.2 of \cite{bach_kernel_2002} for the 1D case with Gaussian distribution).
+
+In order to extend results for Matern kernels in the multidimensional setting on a compact domain, possible direction could be to explore whether the Matern kernel is Sobolev smooth and then use results of eigenvalue decay for such smoothness conditions (see proposition 2.21 of \cite{schwab_karhunenloeve_2006} or proposition 3.2 of \cite{todor_robust_2006}). If this is the case, a decay of $m^{-\alpha / d}$ could be obtained, for some $\alpha > 0$.
+
+To the best of my knowledge, there is no result for a non-compact domain in $d > 1$ dimensions. 
+
+\begin{comment}
 \begin{theorem}
 Let $\vect x_1, \ldots, \vect x_n \in D \subset \R^d$ be the $d$-dimensional data in $D$ compact. If the kernel $k: D \to D$ is Sobolev smooth, then the eivenvalues of the kernel matrix satisfy, for some $c, \alpha > 0$
 
@@ -1033,42 +1069,49 @@ Let $\vect x_1, \ldots, \vect x_n \in D \subset \R^d$ be the $d$-dimensional dat
 \begin{proof}
 Proposition 3.2 of \cite{todor_robust_2006}.
 \end{proof}
+\end{comment}
 
 %Note that alternatively, one may assume no distribution $p$ of the data and instead consider the operator $T_k f = \int k(\vect x, \cdot) f(\vect x) d\vect x$, then interpreting approximation \eqref{eq:nystrom} as a quadrature rule. 
 
 
 \subsection{Overall Time Complexity}
 
-Recall $N$ is the number of probe vectors, $m$ the number of mBCG iterations, $n$ the size of the kernel matrix and $k$ the number of pivoted Cholesky steps. One can derive the following time complexity for mBCG, and the \emph{additional} complexity induced by preconditioning:
+\textcolor{red}{Why do you jump from eigenvalues to overall time complexity???? Is this section necessary??? }Recall $N$ is the number of probe vectors, $m$ the number of mBCG iterations, $n$ the size of the kernel matrix and $k$ the number of pivoted Cholesky steps. One can derive the following time complexity for mBCG, and the \emph{additional} complexity induced by preconditioning:
 
 \begin{align*}
     \mathcal C_{\text{mBCG}}(n, m, N) &= \mathcal O(mn^2N) \\
-    \mathcal C_{\text{precond}}(n, k, m, N) &= \mathcal O(k^2 n + Nm(k^3 + kn)) \; .
+    \mathcal C_{\text{precond}}(n, k, m, N) &= \mathcal O(k n^2 + Nm(k^3 + kn)) \; .
 \end{align*}
 
-With the output of mBCG at hand, 
+Those two costs dominate the whole inference procedure, hence the total cost of GPyTorch is $\mathcal O(kn^2 + Nm(n^2 + k^3))$. Note that this is a crude asymptotic upper bound as it does not account for massive parallelization of matrix-matrix products. The parameters $N, k, m$ all depend on the kernel matrix at hand and mutually interact in a complex way. In the experiments of Gardner et al. \cite{gardner_gpytorch_2021}, they assume constant values ($k=5$, $m=20$, $N=10$) and hence state a $\mathcal O(n^2)$ complexity. 
 
-\textbf{TODO Lanczos quadrature}
+\section{Numerical Experiments} \label{sec:numexp}
 
+\textcolor{red}{Why did you remove the example from the toy model with the sinus curve???}
 
+In the following numerical experiments, we will generate synthetic data points $\vect x_i \in \R^d$ with independent components in dimension $d=1,2,3,4$. This setting is far from real-world applications in which $d>10$ may be common, and such cases are presented in experiments of Gardner et al. \cite{gardner_gpytorch_2021}.
+However, our experiments cannot be compared with those of Gardner et al. \cite{gardner_gpytorch_2021} as i) they do not provide a breakdown of the computations, ii) their code provides no obvious entry point to do so (e.g. compute the logdet), iii) their implementation heavily relies on techniques\footnote{See an example list on \url{https://docs.gpytorch.ai/en/stable/examples/02_Scalable_Exact_GPs/index.html}} not even mentionned in the paper to increase efficiency and accuracy. 
 
-\section{Numerical Experiments}
+The experiments are organized as follows. We first show the spectra of different kernel matrices, and the efficiency of pivoted Cholesky on those matrices. We then analyze errors of Lanczos quadrature and stochastic Lanczos quadrature for logdet estimation. Eventually, we show the errors of the likelihood and its gradient in function of the preconditioner rank. 
+
 
 \subsection{Overview of Covariance Functions and Kernel Matrices}
 
-We start by showing the shape of the different kernels functions and random functions drawn from the prior induced by the choice of the kernel in Figure~\ref{fig:kernel_overview}. For Matern kernels, one sees how the smoothness of the function increases with increasing $\nu$ parameter. For the extreme cases $\nu = 1/2$ and $\nu \to \infty$ (which corresponds to SE kernel), the resulting functions are respectively very rough and very smooth, which makes those kernels unlikely to appropriately fit data. If the priors are too rough, we will likely fit the noise and the model variance will be significant. On the other hand, an overly smooth function may under-fit and the model bias will be significant. This simple example already shows how the bias-variance tradeoff balances in the GPR setting, and why Matern kernels become increasingly popular over SE kernels. 
+We start by showing the shape of the different kernels functions and random functions drawn from the prior induced by the choice of the kernel in Figure~\ref{fig:kernel_overview}. For Matern kernels, one sees how the smoothness of the function increases with increasing $\nu$ parameter. For the extreme cases $\nu = 1/2$ and $\nu \to \infty$ (which corresponds to SE kernel).%, the resulting functions are respectively very rough and very smooth, which makes those kernels unlikely to appropriately fit data. If the priors are too rough, we will likely fit the noise and the model variance will be significant. On the other hand, an overly smooth function may under-fit and the model bias will be significant. This simple example already shows how the bias-variance tradeoff balances in the GPR setting, and why Matern kernels become increasingly popular over SE kernels. 
 
-In Figure~\ref{fig:kernel_mx_eigvals}, we show the eigenvalues of the kernel matrices $K_{XX}$ with nodes in $[0, 1]$ for the same kernel functions. For the SE kernel, eigenvalues exhibit fast exponential decay, as the slope is fairly linear on a semilog scale. The corresponding kernel matrix $K_{XX}$ is so badly conditioned that standard algorithms (e.g., \texttt{numpy.linalg.eigvalsh} or \texttt{torch.linalg.eigvalsh}) fail to correctly compute all eigenvalues and returns negative values (in the range $-1 \cdot 10^{-16}$). Hence, all eigenvalues below some threshold were set to zero for visualization. 
+In Figure~\ref{fig:kernel_mx_eigvals}, we show the eigenvalues of the kernel matrices $K_{XX}$ for the same kernel functions, using normally- and uniformly-distributed data in different dimensions. For the SE kernel in 1D, eigenvalues exhibit fast exponential decay, as the slope is linear on a semilog scale. Increasing the dimension greatly reduces the rate of decay. For the 1D Matern uniform case, the linear part on a log-log scale (between index $10$ and $100$) indeed has slope $-2\lceil \nu \rceil = -4$ as stated in theorem \ref{thm:matern_1d_uniform} with corresponding constant $C=233$. 
+%The corresponding kernel matrix $K_{XX}$ is so badly conditioned that standard algorithms (e.g., \texttt{numpy.linalg.eigvalsh} or \texttt{torch.linalg.eigvalsh}) fail to correctly compute all eigenvalues and returns negative values (in the range $-1 \cdot 10^{-16}$). Hence, all eigenvalues below some threshold were set to zero for visualization. 
 
 
 
 \begin{figure}
     \centering
     \includegraphics[width=\textwidth]{res/covariance_overview.pdf}
-    \caption{Overview of different kernel functions. SE is squared exponential, $l$ is lengthscale, $\nu$ is the smoothness parameter. \textbf{Left}: covariance functions as function of distance. \textbf{Right}: prior functions $f \sim \mathcal N(\vect 0, K_{XX})$.}
+    \caption{Overview of different kernel functions. SE is squared exponential, $l$ is lengthscale, $\nu$ is the smoothness parameter. \textbf{Left}: covariance functions as function of distance. \textbf{Right}: one prior function $f \sim \mathcal N(\vect 0, K_{XX})$ sampled for each kernel.}
     \label{fig:kernel_overview}
 \end{figure}
 
+\begin{comment}
 \begin{figure}
     \centering
     \includegraphics[width=0.6\textwidth]{res/kernel_eigenvalues.pdf}
@@ -1077,94 +1120,96 @@ In Figure~\ref{fig:kernel_mx_eigvals}, we show the eigenvalues of the kernel mat
     }
     \label{fig:kernel_mx_eigvals}
 \end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.85\textwidth]{res/kernel_eigenvalues_dimension.pdf}
-    \caption{Effect of the input space dimension on the spectral decay of the kernel matrix. The grids are $\vect x_1, \ldots, \vect x_{100} \sim \mathcal U([0, 1]^d)$, noise variance $\sigma^2 = 0.1$. \textbf{Left}: squared exponential kernel with lengthscale $l=0.5$. \textbf{Right}: Matern kernel with $l=0.5, \nu = 2.5$.}
-    \label{fig:my_label}
-\end{figure}
-
-\subsection{Preconditioning Kernel Matrices}
-
-We seek for empirical evidence of formula \eqref{eq:pivchol_trace_error} for SE and Matern kernels with nodes in $[0, 1]$ on the left panel of Figure~\ref{fig:kernel_precond}. Indeed, the error $\trace(E_k) = \trace(K_{XX} - L_k L_k^\top)$ --- which is available exactly from pivoted Cholesky algorithm --- decays exponentially fast with respect to the rank $k$. However, the rate of decay is dramatically affected by the kernel parameters: rough kernels (i.e., small $l$ and small $\nu$) converge more slowly. In turn, this exponential error decay leads to a condition number that converges exponentially fast to one (see Corollary \ref{thm:pivchol_precond}), as shown in the right panel of Figure~\ref{fig:kernel_precond}. As expected, preconditioning with pivoted Cholesky is extremely effective as long as $\trace(E_k)$ decays exponentially. 
-
-We start by showing empirical evidence of formula , i.e. the exponential convergence of pivoted Cholesky algorithm as a low-rank approximation of SE and Matern kernel matrices. As shown in left panel of Figure~\ref{fig:kernel_precond}, the error $E_k = K_{XX} - L_kL_k^\top$ in terms the trace is a linear curve on a semi-log scale, so that $\trace(E_k) = \mathcal O(\alpha^{-k})$ for some $\alpha > 1$.
-
-We start by showing the exponential decay of the error of the pivoted Cholesky algorithm with respect to the number of steps $k$ in the left panel of Figure~\ref{fig:kernel_precond}. As suggested by formula \ref{}
-
-In Figure~\ref{fig:logdet_precond}, logdet relative error with respect to the number of probe vectors $N$ while comparing different ranks of the preconditionner. For a fixed rank $k$ of the preconditionner, the relative error decreases with a rate about $\mathcal O(N^{-1/2})$. However, it is clear that the rank $k$ plays a much more important role for the error. Recall that the log-det is the sum of two values,
-
-\begin{equation*}
-    \log \det \widehat K_{XX} = \log\det\left(\widehat P_k^{-1} \widehat K_{XX} \right) + \log\det \widehat P_k \; ,
-\end{equation*}
-
-where randomness only occurs in the log-det of the preconditionned matrix, whereas $\log\det \widehat P_k$ is computed exactly. Since the preconditionned matrix converges quickly to the identity for even small values of $k$, its logdet will have small fluctuations around zero, so that the randomness incurred by the number of probe vectors has a small effect on the relative error.
-
-\begin{comment}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\linewidth]{res/kernel_preconditionning.pdf}
-    \caption{Preconditioning of kernel matrices with partial pivoted Cholesky. The preconditionner is $\widehat P_k = L_k L_k^\top + \sigma^2 \mathbb I$, 
-    % NOTE: for some reason, my \Id command produces an error in the figure environment :( using hard-coded mathbb instead
-    where $L_kL_k^\top \approx K_{XX}$. Kernels are univariate with data points $x_1, \ldots, x_{1000} \sim \mathcal U([0,1])$, the noise variance was set to $\sigma^2 = 0.5$. $k = 0$ denotes absence of preconditionning.
-    \textbf{Left}: trace of error term $K_{XX} - L_k L_k^\top$. \textbf{Right}: condition number of the preconditionned SPD matrix $\widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2}$.}
-    \label{fig:kernel_precond}
-\end{figure}
-
 \end{comment}
 
-
-\begin{figure}[ht!]
+\begin{figure}
     \centering
-    \includegraphics[width=0.9\linewidth]{report/res/kernel_preconditionning_1d_uniform.pdf}
-    \caption{Preconditioning of kernel matrices with partial pivoted Cholesky. The preconditionner is $\widehat P_k = L_k L_k^\top + \sigma^2 \mathbb I$, 
-    % NOTE: for some reason, my \Id command produces an error in the figure environment :( using hard-coded mathbb instead
-    where $L_kL_k^\top \approx K_{XX}$. Kernels are univariate on a uniform grid on $[0, 1]$ with $n = 1000$ points, the noise variance was set to $\sigma^2 = 0.5$. $k = 0$ denotes absence of preconditionning.
-    \textbf{Left}: trace of error term $K_{XX} - L_k L_k^\top$. \textbf{Right}: condition number of the preconditionned SPD matrix $\widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2}$.}
-    \label{fig:kernel_precond_1d_unif}
+    \includegraphics[width=0.75\textwidth]{report/res/kernel_eigvals.pdf}
+    \caption{Eigenvalues of the kernel matrix on $1000$ data points $\vect x_i \sim \mathcal D$ for different distribution $\mathcal D$ in dimension $d=1,2,3,4$. Values shown are averaged over 5 runs. \textbf{Upper row}: Uniform data $\mathcal D = \mathcal U([0,1]^d)$, \textbf{bottom row}: Gaussian data  $\mathcal D = \mathcal N(\vect 0_d, \mathbb I_d)$. \textbf{Left column}: squared exponential kernel with lengthscale $l = 0.25$, \textbf{right column}: Matern kernel with lengthscale $l=0.25$ and smoothness $\nu = 1.5$. 
+    %Effect of the input space dimension on the spectral decay of the kernel matrix. The grids are $\vect x_1, \ldots, \vect x_{100} \sim \mathcal U([0, 1]^d)$, noise variance $\sigma^2 = 0.1$. \textbf{Left}: squared exponential kernel with lengthscale $l=0.5$. \textbf{Right}: Matern kernel with $l=0.5, \nu = 2.5$.
+    }
+    \label{fig:kernel_mx_eigvals}
 \end{figure}
 
-\begin{figure}[h!]
+\subsection{Pivoted Cholesky on Kernel Matrices}
+
+We use $1000$ data points $\vect x_i \sim \mathcal D$ for the uniform and Gaussian distribution in several dimensions with the SE and Matern kernels. We run up to $k_{\max} = 300$ steps of pivoted Cholesky, early stopping whenever $\trace(E_k)$ drops below the tolerance $10^{-10}$. 
+
+The growth factor $\Gamma_k$ of Theorem~\ref{thm:pivchol_decay} is shown in Figure~\ref{fig:pivchol_gamma}. Recall that the theoretical worst case is $\Gamma_k = \mathcal O(4^k)$. For the kernel matrices we consider here, we have linear growth at worst. 
+Comparing the balance between spectral decay and the growth of the gamma factor, we show in Figure~\ref{fig:pivchol_upperbound} the factor $\Gamma_k \lambda_k(K_{XX})$ appearing in the upper bound of $\trace(E_k)$ in Theorem~\ref{thm:pivchol_decay}. For the cases with slow spectral decay (see Figure~\ref{fig:kernel_mx_eigvals}), the upper bound might not even decay with the rank $k$, giving no guarantees on the efficiency of pivoted Cholesky as a preconditioner. 
+Eventually, the condition number of the kernel matrix preconditioned with pivoted Cholesky in Figure~\ref{fig:pivchol_cond}. For Gaussian data in dimension $d> 1$, the preconditioner has little effect, but the matrices are well conditioned in the first place.
+
+\begin{figure}
     \centering
-    \includegraphics[width=0.9\linewidth]{report/res/kernel_preconditionning_2d_uniform.pdf}
-    \caption{Same as Figure~\ref{fig:kernel_precond_1d_unif} but with 2-dimensional data $\vect x_1, \ldots, \vect x_{100} \sim \mathcal U([0, 1]^2)$.}
-    \label{fig:kernel_precond_2d_unif}
+    \includegraphics[width=0.85\textwidth]{report/res/pivchol_gamma.pdf}
+    \caption{Factor $\Gamma_k$ of Theorem~\ref{thm:pivchol_decay} for pivoted Cholesky run on $K_{XX}$ with $1000$ data points $\vect x_i \sim \mathcal D$. Values are averaged over five runs, shaded areas represent $\pm$ standard deviation. \textbf{Columns}: uniform (left) and Gaussian (right) data. \textbf{Rows}: squared exponential (top) and Matern (bottom) kernels. }
+    \label{fig:pivchol_gamma}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.85\textwidth]{report/res/pivchol_upperbound.pdf}
+    \caption{Upperbound $\Gamma_k \lambda_k(K_{XX})$ of Theorem~\ref{thm:pivchol_decay} for pivoted Cholesky run on $K_{XX}$ with $1000$ data points $\vect x_i \sim \mathcal D$. Values are averaged over five runs, shaded areas represent $\pm$ standard deviation. \textbf{Columns}: uniform (left) and Gaussian (right) data. \textbf{Rows}: squared exponential (top) and Matern (bottom) kernels. }
+    \label{fig:pivchol_upperbound}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.85\textwidth]{report/res/pivchol_cond.pdf}
+    \caption{Condition number of the preconditioned matrix $M := \widehat P^{-1/2}_k \widehat K_{XX} \widehat P^{-1/2}_k$ with $1000$ data points $\vect x_i \sim \mathcal D$. Values are averaged over five runs, shaded areas represent $\pm$ standard deviation. \textbf{Columns}: uniform (left) and Gaussian (right) data. \textbf{Rows}: squared exponential (top) and Matern (bottom) kernels. }
+    \label{fig:pivchol_cond}
 \end{figure}
 
 
-\begin{figure}[h!]
-    \centering
-    \includegraphics[width=0.9\linewidth]{report/res/kernel_preconditionning_1d_stdnormal.pdf}
-    \caption{Same as Figure~\ref{fig:kernel_precond_1d_unif} but with 1-dimensional normally distributed data $\vect x_1, \ldots, \vect x_{100} \sim \mathcal N(0, 1)$.}
-    \label{fig:kernel_precond_1d_stdnormal}
-\end{figure}
 
 
-\begin{figure}[h!]
-    \centering
-    \includegraphics[width=0.9\linewidth]{report/res/kernel_preconditionning_2d_stdnormal.pdf}
-    \caption{Same as Figure~\ref{fig:kernel_precond_1d_unif} but with 2-dimensional normally distributed data $\vect x_1, \ldots, \vect x_{100} \sim \mathcal N(\vect 0_2, \mathbb I_2)$.}
-    \label{fig:kernel_precond_2d_stdnormal}
-\end{figure}
+\subsection{Lanczos quadrature and Log Determinant Estimation}
 
+We compare the bounds of Theorem \ref{thm:cortinovis} for Lanczos tridiagonalizations computed with mBCG. We use custom matrices to have control on the spectra. 
+Recall for a fixed relative error $\epsilon$, the estimated number of probe vectors $N$ is mainly driven by the ratio $r = \norm{\log A}_F^2 / \trace(\log A)^2$. 
+In Figure~\ref{fig:logdet_mbcg}, we compare log-det estimation for a matrix with ratio $r \ll 1$ (left panel) and with $r \approx 1$ (right panel).
+The case $r \ll 1$ requires very few probe vectors and iterations, as the variance of the estimator and the error of Lanczos are small compared to the trace. The case $r \approx 1$ compares unfavorably to using $n$ probe vectors with the canonical basis. 
 
-
-\subsection{Stochastic Lanczos Quadrature for Log Determinant Estimation}
-
-We start by log-det estimation without preconditioning. We show two cases in order to show the differences and how the number of Lanczos steps $m$ interplays with the number of probe vectors $N$ and the relative error $\epsilon$. Recall for a fixed error $\epsilon$, the estimated $N$ from Theorem \ref{thm:cortinovis} is mainly driven by $\norm{\log A}_F^2 / \trace(\log A)^2$. Hence, a matrix whose logdet is easy to compute should have its trace large compared to the variance of its trace estimator. The above ratio is minimized when the matrix has a single distinct eigenvalue. However, Lanczos would converge after a single iteration, so we instead set $\lambda_i = i$ in order to compare accuracy with respect to different number of steps. In the left panel of Figure~\ref{fig:logdet_mbcg}, we indeed see that the target error is reached with $m, N$ much smaller than their value estimated from Theorem \ref{thm:cortinovis}. Since the variance of the estimator is much smaller than the logdet, ...
-
-In the left panel of Figure~\ref{fig:logdet_mbcg}, we see that 
+We show the error of Lanczos quadrature with preconditioning for an example kernel matrix in Figure~\ref{fig:quadrature}. 
+Each curve represents a different rank $k$ of the preconditioner, and hence represent estimation of quadratures with different matrices. Comparing the slopes shows preconditioning allows to decrease the number of iterations. 
 
 \begin{figure}
     \centering
     \includegraphics[width=\textwidth]{res/logdet_mbcg.pdf}
-    \caption{Log determinant estimation with stochastic Lanczos quadrature where partial tridiagonal matrices were computed with mBCG algorithm. The matrices are $A = Q \Lambda Q^\top \in \R^{n \times n}$ with $n=1000$, $Q$ orthogonal and $\Lambda = \text{diag}(\lambda_1, \ldots, \lambda_n)$. The $95^\text{th}$ error quantiles are plotted. \textbf{Left}: $\lambda_i = i, \, 1 \le i \le n$, the estimated $m$ value is 51. \textbf{Right}: $\lambda_i = 10i, \, 1 \le i \le 10$, $\lambda_i = 1, \, 10 < i \le n$, so that $\text{rank}(\log K_{XX}) = 10$. The estimated $m$ value is $132$.}
+    \caption{Log determinant estimation with stochastic Lanczos quadrature where partial tridiagonal matrices were computed with mBCG algorithm, no preconditioning used. The matrices are $A = Q \Lambda Q^\top \in \R^{n \times n}$ with $n=1000$, $Q$ orthogonal and $\Lambda = \text{diag}(\lambda_1, \ldots, \lambda_n)$. The $95^\text{th}$ error quantiles are plotted. \textbf{Left}: $\lambda_i = i, \, 1 \le i \le n$, the estimated $m$ value is 51. \textbf{Right}: $\lambda_i = 10i, \, 1 \le i \le 10$, $\lambda_i = 1, \, 10 < i \le n$, so that $\text{rank}(\log K_{XX}) = 10$. The estimated $m$ value is $132$.}
     \label{fig:logdet_mbcg}
 \end{figure}
 
 
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{report/res/quadrature_1d_gaussian_matern.pdf}
+    \caption{Error of Lanczos quadrature for the estimate $\norm{\vect z}_2^2 \vect e_1^\top \log(T_m) \vect e_1 \approx \vect z^\top \log(M) \vect e_1$, with $T_m$ the tridiagonalization of the preconditioned matrix $M = \widehat P_k^{-1/2} \widehat K_{XX} \widehat P_k^{-1/2}$ for $k > 0$ and $M = K_{XX}$ for $k=0$. We used 1D Gaussian data with a Matern kernel ($\sigma^2 = 0.1$, $\ell = 0.1$).}
+    \label{fig:quadrature}
+\end{figure}
+
+
+\subsection{Computation of Likelihood}
+
+We test computation of likelihood on 2D uniform data with SE kernel. We run as many steps as required for mBCG to reach tolerance $10^{-10}$, as shown in Figure~\ref{fig:likelihood_mbcg_steps}. For a fixed preconditioner rank $k$, the logdet error achieves a Monte Carlo rate $\mathcal O(N^{-1/2})$ in Figure~\ref{fig:likelihood_logdet}, whereas increasing $k$ makes the preconditioner capture most of the logdet (see Equation~\ref{eq:logdet_precond}). The error on the trace term is independent of $k$ and achieves a Monte Carlo rate as well, see Figure~\ref{fig:likelihood_traces}. The final errors on the likelihood and the gradient (Equations~\ref{eq:marginal_log_likelihood}, \ref{eq:marginal_log_likelihood_gradient}) are shown in Figures~\ref{fig:likelihood_likelihood}, \ref{fig:likelihood_grad}.
+
+
+\begin{figure}
+    \centering
+    \subfigure[]{\label{fig:likelihood_mbcg_steps}\includegraphics[width=0.3\textwidth]{report/res/likelihood_mbcg_steps.pdf}}
+    \subfigure[]{\label{fig:likelihood_logdet}\includegraphics[width=0.3\textwidth]{report/res/likelihood_logdet.pdf}}
+    \subfigure[]{\label{fig:likelihood_traces}\includegraphics[width=0.3\textwidth]{report/res/likelihood_traces.pdf}}
+    \subfigure[]{\label{fig:likelihood_likelihood}\includegraphics[width=0.3\textwidth]{report/res/likelihood_likelihood.pdf}}
+    \subfigure[]{\label{fig:likelihood_grad}\includegraphics[width=0.3\textwidth]{report/res/likelihood_gradient.pdf}}
+    \label{fig:likelihood}
+    \caption{Likelihood computation for 2D uniform data with SE kernel ($\sigma^2 = 0.1, \ell = 0.2$).}
+\end{figure}
+
+
+% -----------------------------------------------------
+
+
+\begin{comment}
 \subsection{Logdet Estimation of Kernel Matrix with Preconditioning}
 
 \begin{figure}
@@ -1195,16 +1240,8 @@ In the left panel of Figure~\ref{fig:logdet_mbcg}, we see that
     \caption{Same as Figure \ref{fig:likelihood} but with data $\sim \mathcal N(0, 1)$.}
     \label{fig:likelihood_1d_stdnormal}
 \end{figure}
+\end{comment}
 
-
-%\subsection{"Logdet of precond captures everything when $k$ scales as log of ..."}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{res/logdet_precond.pdf}
-    \caption{Caption}
-    \label{fig:logdet_precond}
-\end{figure}
 
 
 % ----------------------------------------------
@@ -1391,57 +1428,5 @@ Finally, denoting $\odot$ the element-wise multiplication and $\vect 1$ a vector
 results in weighting each column of $A$ by coefficients in $\vect\alpha$. This is straightforward to implement using Numpy's broadcasting rules\footnote{See \url{https://numpy.org/doc/stable/user/basics.broadcasting.html}}, e.g. \texttt{alpha.T * A}. 
 \end{comment}
 
-
-\section{Questions}
-
-
-\section{TODOs}
-
-\subsection{Report}
-
-\begin{itemize}
-    \item Abstract
-    \item \st{Introduction: Gaussian Process regression}. Keywords: non parametric, weight-space vs function space view, bayesian linear regression, kernel trick, notation for kernel matrix, feature space, distribution over functions, etc
-    \begin{itemize}
-        \item rewrite introduction of introduction
-        \item probably too verbose...
-    \end{itemize}
-    \item Rewrite preconditionning section
-    \item Numerical experiments
-\end{itemize}
-
-\subsection{Theory}
-
-\begin{itemize}
-    \item Lemma 4 of Gardner only for even polynomials ??? The  can only bound one out of two eigenvalues of the kernel matrix, what are the implications ?
-    \item Try to apply lemmas to Matern kernels
-    \item Try to apply lemmas to multivariate kernels
-    \item Restate results for nodes in general interval $[a, b]$
-    \item Thoughts for Matern kernels: we know the Fourier transform of the RBF and Matern kernels \cite{rasmussen_gaussian_2005}, using that the eigenvalues of the kernel matrix converges to the eigenvalues of the corresponding operator (e.g. \cite{braun_accurate_2006}), can we recover the eigenvalue decay from the Fourier transform ?
-\end{itemize}
-
-\subsection{Numerical experiments}
-
-\begin{itemize}
-    \item \st{Check bug in mBCG: bad convergence with log-uniform eigenvalues} 
-    \begin{itemize}
-        \item I have the same results as scipy's cg algorithm
-        \item $\Rightarrow$ check literature
-    \end{itemize}
-    \item \st{Preconditionning of kernel matrices.} Done, Figure \ref{fig:kernel_precond}
-    \item Convergence of logdet w.r.t. $N$, $m$, with preconditionning $\rightarrow$ also w.r.t. rank $k$
-\end{itemize}
-
-\textcolor{red}{DAVID'S LIST OF TO DO'S}
-\begin{itemize}
-    \item Introduction: Introduce GP inference and explain the problem, related work etc.
-    \item Problem: Clearly state what you are trying to solve and how you arrive at this problem (derivation of MLE etc), and what you have achieved.
-    \item Section of Monte carlo trace estimation. Include monte carlo bounds.
-    \item Section on stochastic Lanczos. Include bounds that take into account lanczos. Explain problem when condition number is large and why we need preconditioning.
-    \item Explain preconditioning. Include result on the condition number of RBF and Matern kernels. Restate theorem on how many matvecs you need to do to get a sufficiently accurate estimate. Explain sampling etc. 
-    \item Final algorithm
-    \item Numerical experiments.
-    \item Conclusion
-\end{itemize}
 
 \end{document}
