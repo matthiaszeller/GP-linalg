@@ -1,0 +1,89 @@
+% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> %
+%           MATHS                        %
+% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> % 
+% https://www.overleaf.com/learn/latex/Mathematical_expressions
+% https://en.wikibooks.org/wiki/LaTeX/Mathematics
+\usepackage{amsmath,amsfonts,amssymb,mathtools, bbold, bbm}
+
+% Algorithms
+% https://www.overleaf.com/learn/latex/algorithms
+% https://en.wikibooks.org/wiki/LaTeX/Algorithms
+%\usepackage[ruled,vlined]{algorithm2e}
+%\usepackage{algorithmic}
+\usepackage[ruled,vlined]{algorithm2e}
+% Colored comments
+\newcommand\mycommfont[1]{\ttfamily\textcolor{blue}{#1}}
+\SetCommentSty{mycommfont}
+
+
+% Make mathbb nice (e.g. set of real number R: \mathbb R)
+% https://tex.stackexchange.com/questions/58098/what-are-all-the-font-styles-i-can-use-in-math-mode
+\AtBeginDocument{
+  \DeclareSymbolFont{AMSb}{U}{msb}{m}{n}
+  \DeclareSymbolFontAlphabet{\mathbb}{AMSb}
+}
+
+% Double struck zero matrix
+% https://tex.stackexchange.com/a/399950/217578
+\DeclareMathAlphabet{\mymathbb}{U}{BOONDOX-ds}{m}{n}
+
+% Custom commands & operators: vectors, matrice operations, expectations, variance, ...
+\newcommand{\vect}[1]{\boldsymbol{\mathbf{#1}}}
+\newcommand{\R}{\mathbb R}
+\newcommand{\norm}[1]{\Vert #1 \Vert}
+\DeclareMathOperator{\trace}{Tr}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{\mathbb{V}ar}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+% Double-bar Identity matrix: with or without size argument
+% https://tex.stackexchange.com/questions/409760/detect-no-argument-in-newcommand
+\makeatletter
+\def\Id{\@ifnextchar[\Id@command{\mathbb I}}
+\def\Id@command[#1]{\mathbb I_{#1}}
+\makeatother
+
+% Theorem, lemmas, corollaries, proofs, ...
+\usepackage{amsthm} % proof
+%\newtheorem{theorem}{Theorem}[section]
+%\newtheorem{corollary}{Corollary}[theorem]
+%\newtheorem{lemma}[theorem]{Lemma}
+%\newtheorem{proposition}[theorem]{Proposition}
+%\newtheorem*{remark}{Remark}
+%\newtheorem{observation}[theorem]{Observation}
+% The setup_math.tex file might be included in the slides, where the beamer package already defines theorems & co, so check if they're already defined before adding them
+% https://tex.stackexchange.com/questions/41496/how-to-define-an-environment-only-if-it-is-not-defined-yet-using-etoolbox
+\ifcsmacro{definition}{}{
+  \let\endtheorem\undefined%
+  \newtheorem{definition}{Definition}[section]
+}
+\ifcsmacro{theorem}{}{
+  \let\endtheorem\undefined%
+  \newtheorem{theorem}{Theorem}[section]
+}
+\ifcsmacro{corollary}{}{
+  \let\endcorollary\undefined%
+  \newtheorem{corollary}{Corollary}[theorem]
+}
+\ifcsmacro{lemma}{}{
+  \let\endlemma\undefined%
+  \newtheorem{lemma}[theorem]{Lemma}
+}
+\ifcsmacro{proposition}{}{
+  \let\endproposition\undefined%
+  \newtheorem{proposition}[theorem]{Proposition}
+}
+\ifcsmacro{remark}{}{
+  \let\endremark\undefined%
+  \newtheorem*{remark}{Remark}
+}
+\ifcsmacro{observation}{}{
+  \let\endobservation\undefined%
+  \newtheorem{observation}[theorem]{Observation}
+}
+
+
+% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< %
+%           MATHS                        %
+% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< %
