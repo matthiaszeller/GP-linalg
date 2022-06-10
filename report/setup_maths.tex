@@ -35,6 +35,8 @@
 \DeclareMathOperator{\E}{\mathbb{E}}
 \DeclareMathOperator{\Var}{\mathbb{V}ar}
 
+\DeclareMathOperator*{\argmin}{arg\,min}
+
 % Double-bar Identity matrix: with or without size argument
 % https://tex.stackexchange.com/questions/409760/detect-no-argument-in-newcommand
 \makeatletter
@@ -52,6 +54,10 @@
 %\newtheorem{observation}[theorem]{Observation}
 % The setup_math.tex file might be included in the slides, where the beamer package already defines theorems & co, so check if they're already defined before adding them
 % https://tex.stackexchange.com/questions/41496/how-to-define-an-environment-only-if-it-is-not-defined-yet-using-etoolbox
+\ifcsmacro{definition}{}{
+  \let\endtheorem\undefined%
+  \newtheorem{definition}{Definition}[section]
+}
 \ifcsmacro{theorem}{}{
   \let\endtheorem\undefined%
   \newtheorem{theorem}{Theorem}[section]
