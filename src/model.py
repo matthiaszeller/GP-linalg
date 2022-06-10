@@ -7,7 +7,7 @@ from src.cg import mbcg
 from src.inference import inference
 from src.kernel import Kernel, SquaredExponentialKernel
 from math import log
-
+import numpy as np
 from src.precond import PartialCholesky
 
 
@@ -53,6 +53,90 @@ class GPModel:
         self._true_training_likelihoods = []
         self._true_training_likelihoods_grad = []
 
+    def train(self, niter: int = 10, k=10, N=10, m=10, mbcg_tol=1e-10, verbose: bool = True):
+        """
+        Train the Gaussian process using constrained optimization on the likelihood,
+        where the likelihood estimation is based on mBCG output.
+
+        :param niter: iterations of the optimizer
+        :param k: rank of low-rank approximation, i.e. number of pivoted Cholesky steps
+        :param N: number of probe vectors for stochastic trace estimation
+        :param m: max number of CG/Lanczos steps
+        :param mbcg_tol: tolerance for mBCG algorithm
+        :return: predictive training mean, predictive training covariance, marginal log likelihood
+        """
+        self.verbose = verbose
+        res = minimize(
+            fun=self._call_l,
+            x0=self.hyperparams,
+            args=(k, N, m, mbcg_tol),
+            jac=self._call_dl,
+            options={
+                'maxiter': niter
+            },
+            bounds=self.kernel.HYPERPARAMS_BOUNDS
+        )
+
+        mean, cov = self.compute_prediction(self.train_x)
+        return mean, cov, self._buffer_l
+
+    def compute_likelihood(self, k=10, N=10, m=20, mbcg_tol=1e-10, callback_inference=None, info=None):
+        """
+        Approximate marginal log likelihood based on mBCG output.
+
+        :param k: rank of pivoted Cholesky approximation
+        :param N: number of probe vectors
+        :param m: max number of Lanczos steps
+        :param mbcg_tol: tolerance for mBCG
+        :param callback_inference: callback function with input (ysolve, logdet, traces)
+        :param info: None or a dictionnary to bookkeep the number of mBCG iterations
+        :return: likelihood, gradient of likelihood, ysolve
+        """
+        # Evaluate the kernel matrix and the gradient
+        _, gradK = self.kernel.compute_kernel_and_grad(self.hyperparams)
+
+        # Run mBCG algorithm
+        ysolve, logdet, traces = inference(self.train_y, self.kernel, k=k, N=N, m=m, mbcg_tol=mbcg_tol, info=info)
+
+        # Callback for results of mBCG (debugging, numerical experiments)
+        if callback_inference is not None:
+            callback_inference(ysolve, logdet, traces)
+
+        # Khat = self.kernel.K + torch.eye(self.train_x.shape[0]) * self.kernel.sigma2
+        # true = torch.linalg.solve(Khat, self.train_y).ravel()
+        # err_ysolve = torch.norm(true - ysolve) / torch.norm(true)
+        # err_logdet = abs( (torch.logdet(Khat) - logdet) / torch.logdet(Khat) )
+
+        # Likelihood computation based on mBCG output
+        n = self.train_y.shape[0]
+        L = - 0.5 * logdet - 0.5 * self.train_y.T @ ysolve - n/2 * log(2*torch.pi)
+
+        # Compute gradient of likelihood
+        dL = []
+        for i in range(gradK.shape[0]):
+            dl = ysolve.T @ (gradK[i] @ ysolve) - traces[i]
+            dL.append(0.5 * dl)
+
+        dL = torch.tensor(dL)
+
+        # Compute exact quantities, for debugging and numerical experiments
+        if self._compute_true_quantities:
+            true_logdet = torch.logdet(self.kernel.Khat())
+            A = torch.linalg.solve(self.kernel.Khat(), self.kernel.grad)
+            true_traces = torch.tensor([M.trace() for M in A])
+            true_ysolve = torch.linalg.solve(self.kernel.Khat(), self.train_y)
+            # Likelihood
+            true_L = -0.5 * true_logdet - 0.5 * self.train_y.T @ true_ysolve - n/2 * log(2*torch.pi)
+            true_dL = []
+            for i in range(gradK.shape[0]):
+                dl = true_ysolve.T @ gradK[i] @ true_ysolve - true_traces[i]
+                true_dL.append(0.5 * dl)
+            # Computations bookkeeping
+            self._true_training_likelihoods.append(true_L)
+            self._true_training_likelihoods_grad.append(torch.tensor(true_dL))
+
+        return L, dL, ysolve
+
     def _call_l(self, theta, *args):
         """Helper function called by blackbox optimizer for evaluating likelihood"""
         # Update the hyperparams
@@ -78,113 +162,17 @@ class GPModel:
         # Again, minus sign
         return - self._buffer_dl.numpy()
 
-    def compute_pred_cov(self, k=10, m=10, mbcg_tol=1e-10):
-        P = PartialCholesky(self.kernel.K, k, self.kernel.sigma2)
-        res, _ = mbcg(self.kernel.Khat_fun, P.inv_fun, self.kernel.K,
-                      torch.zeros_like(self.kernel.K), m, tol=mbcg_tol)
-        cov = self.kernel.K - self.kernel.K.T @ res
-        return cov
+    def compute_prediction(self, xtest):
+        """This is not part of the training.
+        A real implementation should handle this part more efficiently,
+        but we focused on hyperparameter estimation"""
+        K_test = self.kernel.compute_test_kernel(xtest)
+        mean = K_test @ self._ysolve
 
-    def train(self, niter: int = 10, k=10, N=10, m=10, mbcg_tol=1e-10, verbose: bool = True):
-        """
-        Train the Gaussian process with mBCG algorithm and an optimizer
-        :param niter: iterations of the optimizer
-        :param k: rank of low-rank approximation, i.e. number of pivoted Cholesky steps
-        :param N: number of probe vectors
-        :param m: max number of Lanczos steps
-        :param mbcg_tol: tolerance for mBCG algorithm
-        :return: predictive mean, predictive covariance, marginal log likelihood
-        """
-        self.verbose = verbose
-        # TODO: only works for kernel with 2 hyperparams
-        res = minimize(
-            fun=self._call_l,
-            x0=self.hyperparams,
-            args=(k, N, m, mbcg_tol),
-            jac=self._call_dl,
-            options={
-                'maxiter': niter
-            },
-            bounds=[
-                (1e-6, 1e10),
-                (1e-2, 1e10),
-            ]
-        )
+        test_solve = torch.linalg.solve(self.kernel.Khat(), K_test.T)
+        cov = self.kernel.new_data(xtest).K - K_test @ test_solve
 
-        pred_mean = self.kernel.K @ self._ysolve
-        pred_cov = self.compute_pred_cov(k, m, mbcg_tol)
-        pred_cov = pred_cov.diag()
-        return pred_mean, pred_cov, self._buffer_l
-
-    # def train(self, lr: float = 0.001, niter: int = 10, callback=None):
-    #     ysolve = None
-    #
-    #     opt = torch.optim.Adam((self.hyperparams, ), lr=lr)
-    #     for i in range(niter+1):
-    #         L, dL, ysolve = self.compute_likelihood()
-    #         print(f'iter {i:<5} loss {f"{L:.4}":<10} hyperparams {self.hyperparams}')
-    #
-    #         # Gradient step
-    #         #self.hyperparams += lr * dL
-    #         self.hyperparams.grad = -dL
-    #         opt.step()
-    #
-    #         if callback is not None:
-    #             pred_mean = self.kernel.K @ ysolve
-    #             callback(pred_mean)
-    #
-    #     pred_mean = self.kernel.K @ ysolve
-    #     return pred_mean
-
-    def compute_likelihood(self, k=10, N=20, m=10, mbcg_tol=1e-10, callback_inference=None, info=None):
-        """
-        Approximate marginal log likelihood with mBCG algorithm
-        :param k: rank of pivoted Cholesky approximation
-        :param N: number of probe vectors
-        :param m: max number of Lanczos steps
-        :param mbcg_tol: tolerance for mBCG
-        :param callback_inference: callback function with input (ysolve, logdet, traces)
-        :param info: None or a dictionnary to bookkeep the number of mBCG iterations
-        :return: likelihood, gradient of likelihood, ysolve
-        """
-        _, gradK = self.kernel.compute_kernel_and_grad(self.hyperparams)
-
-        ysolve, logdet, traces = inference(self.train_y, self.kernel, k=k, N=N, m=m, mbcg_tol=mbcg_tol, info=info)
-        if callback_inference is not None:
-            callback_inference(ysolve, logdet, traces)
-
-        # Khat = self.kernel.K + torch.eye(self.train_x.shape[0]) * self.kernel.sigma2
-        # true = torch.linalg.solve(Khat, self.train_y).ravel()
-        # err_ysolve = torch.norm(true - ysolve) / torch.norm(true)
-        # err_logdet = abs( (torch.logdet(Khat) - logdet) / torch.logdet(Khat) )
-
-        # Likelihood
-        n = self.train_y.shape[0]
-        L = - 0.5 * logdet - 0.5 * self.train_y.T @ ysolve - n/2 * log(2*torch.pi)
-
-        dL = []
-        for i in range(gradK.shape[0]):
-            dl = ysolve.T @ (gradK[i] @ ysolve) - traces[i]
-            dL.append(0.5 * dl)
-
-        dL = torch.tensor(dL)
-
-        if self._compute_true_quantities:
-            true_logdet = torch.logdet(self.kernel.Khat())
-            A = torch.linalg.solve(self.kernel.Khat(), kernel.grad)
-            true_traces = torch.tensor([M.trace() for M in A])
-            true_ysolve = torch.linalg.solve(self.kernel.Khat(), self.train_y)
-            # Likelihood
-            true_L = -0.5 * true_logdet - 0.5 * self.train_y.T @ true_ysolve - n/2 * log(2*torch.pi)
-            true_dL = []
-            for i in range(gradK.shape[0]):
-                dl = true_ysolve.T @ gradK[i] @ true_ysolve - true_traces[i]
-                true_dL.append(0.5 * dl)
-
-            self._true_training_likelihoods.append(true_L)
-            self._true_training_likelihoods_grad.append(torch.tensor(true_dL))
-
-        return L, dL, ysolve
+        return mean, cov.diag()
 
 
 if __name__ == '__main__':
@@ -204,10 +192,12 @@ if __name__ == '__main__':
         likelihood = np.log(pdf)
         return likelihood
 
-    n, d = 100, 1
-    sigma2 = 0.01
-    x = torch.rand(n, d)
-    f = lambda x: (2*torch.pi*x).sin()
+    n, d = 50, 1
+    sigma2 = 0.05
+    x1, x2 = torch.rand(n//4, d), torch.rand(3*n//4, d)
+    x = torch.concat((x1 * 0.2, x2 * 0.6 + 0.4))
+    #x = torch.rand(n, d)
+    f = lambda x: (2.5*torch.pi*x).sin()
     y = f(x) + torch.randn_like(x) * sigma2**0.5
 
     lengthscale = 0.5
@@ -217,31 +207,47 @@ if __name__ == '__main__':
     model = GPModel(x, y, kernel, hyperparams, compute_true_quantities=True)
     pred_mean, pred_cov, l = model.train()
 
+    # Plotting training quantities
+    # x = x.squeeze(-1)
+    # y = y.squeeze(-1)
+    # sid = torch.argsort(x, dim=0)
+    # plt.scatter(x[sid], y[sid], s=5, label='data')
+    # plt.plot(x[sid], f(x[sid]), '--k', label='true')
+    # plt.plot(x[sid], pred_mean[sid], label='prediction', color='green')
+    # pred_std = pred_cov ** 0.5
+    # plt.fill_between(x[sid], pred_mean[sid] - pred_std[sid], pred_mean[sid] + pred_std[sid],
+    #                  label='+- std', color='green', alpha=.2)
+    # plt.legend()
+    # plt.show()
+
+    grid = torch.linspace(x.min(), x.max(), 100)
+    pred_mean, pred_cov = model.compute_prediction(grid)
+
     x = x.squeeze(-1)
     y = y.squeeze(-1)
     sid = torch.argsort(x, dim=0)
     plt.scatter(x[sid], y[sid], s=5, label='data')
-    plt.plot(x[sid], f(x[sid]), '--k', label='true')
-    plt.plot(x[sid], pred_mean[sid], label='prediction', color='green')
+    plt.plot(grid, f(grid), '--k', label='true')
+    plt.plot(grid, pred_mean, label='prediction', color='green')
     pred_std = pred_cov ** 0.5
-    plt.fill_between(x[sid], pred_mean[sid] - pred_std[sid], pred_mean[sid] + pred_std[sid],
+    plt.fill_between(grid, pred_mean - pred_std, pred_mean + pred_std,
                      label='+- std', color='green', alpha=.2)
     plt.legend()
     plt.show()
 
-    import pandas as pd
-    print('dataset \n\n')
-    #df = pd.read_csv('../tutorial/data/airfoil_self_noise.dat', sep='\t', header=None)
-    df = pd.read_csv('../tutorial/data/dataset_airfoil.csv')
-    X = df.values[:, :-1]
-    y = df.values[:, -1]
-    X = (X - X.mean(0)) / X.std(0)
-    y = (y - y.mean()) / y.std()
-    kernel = SquaredExponentialKernel(X)
-    kernel.compute_kernel(hyperparams)
-    P = PartialCholesky(kernel.K, 10, 0.01)
-    model = GPModel(X, y, kernel, hyperparams, compute_true_quantities=True)
-    pred_mean, pred_cov, l = model.train()
+    # import pandas as pd
+    # print('dataset \n\n')
+    # #df = pd.read_csv('../tutorial/data/airfoil_self_noise.dat', sep='\t', header=None)
+    # df = pd.read_csv('../tutorial/data/dataset_airfoil.csv')
+    # X = df.values[:, :-1]
+    # y = df.values[:, -1]
+    # X = (X - X.mean(0)) / X.std(0)
+    # y = (y - y.mean()) / y.std()
+    # kernel = SquaredExponentialKernel(X)
+    # kernel.compute_kernel(hyperparams)
+    # P = PartialCholesky(kernel.K, 10, 0.01)
+    # model = GPModel(X, y, kernel, hyperparams, compute_true_quantities=True)
+    # pred_mean, pred_cov, l = model.train()
 
     #
     # L, dL, ysolve = model.compute_likelihood(k=15, N=1, m=20)
